@@ -500,6 +500,31 @@ function drawSky() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+  // Intro title watermark in gameplay background.
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = 'rgba(18, 74, 120, 0.45)';
+  roundedRectPath(WIDTH / 2 - 290, 70, 580, 120, 24);
+  ctx.fill();
+
+  ctx.globalAlpha = 1;
+  ctx.shadowColor = 'rgba(14, 55, 96, 0.75)';
+  ctx.shadowBlur = 8;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(18, 74, 120, 0.95)';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 64px Trebuchet MS';
+  ctx.strokeText('カルチャーマイニング', WIDTH / 2, 120);
+  ctx.fillText('カルチャーマイニング', WIDTH / 2, 120);
+  ctx.shadowBlur = 6;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(18, 74, 120, 0.9)';
+  ctx.font = 'bold 32px Trebuchet MS';
+  ctx.strokeText('ADVENTURE', WIDTH / 2, 164);
+  ctx.fillText('ADVENTURE', WIDTH / 2, 164);
+  ctx.restore();
+
   ctx.fillStyle = '#fff3a7';
   ctx.beginPath();
   ctx.arc(820, 90, 42, 0, Math.PI * 2);
