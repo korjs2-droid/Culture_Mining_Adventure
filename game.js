@@ -41,10 +41,10 @@ let bgmStep = 0;
 let bgmNextTime = 0;
 
 const bgmPattern = [
-  261.63, 329.63, 392.0, 329.63,
-  293.66, 349.23, 440.0, 349.23,
-  261.63, 329.63, 392.0, 329.63,
-  220.0, 293.66, 349.23, 293.66,
+  392.0, 493.88, 587.33, 783.99,
+  659.25, 587.33, 523.25, 587.33,
+  440.0, 523.25, 659.25, 783.99,
+  659.25, 587.33, 523.25, 493.88,
 ];
 
 function initAudio() {
@@ -58,11 +58,11 @@ function playBgmNote(freq, startTime, duration) {
   if (!audioCtx || freq <= 0) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
-  osc.type = 'sine';
+  osc.type = 'triangle';
   osc.frequency.setValueAtTime(freq, startTime);
 
   gain.gain.setValueAtTime(0.0001, startTime);
-  gain.gain.linearRampToValueAtTime(0.018, startTime + 0.05);
+  gain.gain.linearRampToValueAtTime(0.026, startTime + 0.04);
   gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
   osc.connect(gain);
@@ -83,8 +83,8 @@ function scheduleBgm() {
   const lookAhead = 0.28;
   while (bgmNextTime < audioCtx.currentTime + lookAhead) {
     const freq = bgmPattern[bgmStep % bgmPattern.length];
-    playBgmNote(freq, bgmNextTime, 0.34);
-    bgmNextTime += 0.38;
+    playBgmNote(freq, bgmNextTime, 0.28);
+    bgmNextTime += 0.3;
     bgmStep += 1;
   }
 }
