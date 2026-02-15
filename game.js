@@ -258,15 +258,7 @@ const goal = {
   h: 190,
 };
 
-const spikes = [
-  { x: 600, y: FLOOR_Y - 18, w: 52, h: 18 },
-  { x: 980, y: FLOOR_Y - 18, w: 58, h: 18 },
-  { x: 1640, y: FLOOR_Y - 18, w: 66, h: 18 },
-  { x: 2360, y: FLOOR_Y - 18, w: 62, h: 18 },
-  { x: 3090, y: FLOOR_Y - 18, w: 66, h: 18 },
-  { x: 1460, y: 242, w: 46, h: 18 },
-  { x: 2860, y: 232, w: 46, h: 18 },
-];
+const spikes = [];
 
 const items = [
   { x: 1110, y: 265, r: 14, type: 'time', got: false },
@@ -341,6 +333,15 @@ function roundedRectPath(x, y, w, h, r) {
   ctx.closePath();
 }
 
+function getPlatformSurfaceY(plat, worldX) {
+  const t = clamp((worldX - plat.x) / plat.w, 0, 1);
+  const ridgeBase = plat.y + plat.h * 0.48;
+  const amp = Math.min(44, Math.max(20, plat.h * 0.42));
+  const softWave = Math.sin(t * Math.PI) * amp * 0.85;
+  const detailWave = Math.sin(t * Math.PI * 2) * amp * 0.35;
+  return ridgeBase - softWave - detailWave;
+}
+
 function overlap(a, b) {
   return (
     a.x < b.x + b.w &&
@@ -413,13 +414,29 @@ function updatePlayer(dt) {
   let wallOnLeft = false;
   let wallOnRight = false;
   for (const plat of platforms) {
-    if (!overlap(p, plat)) continue;
-
     const prevY = p.y - p.vy * dt;
     const prevBottom = prevY + p.h;
+    const currBottom = p.y + p.h;
+    const probeX = clamp(p.x + p.w * 0.5, plat.x + 2, plat.x + plat.w - 2);
+    const surfaceY = getPlatformSurfaceY(plat, probeX);
+    const inPlatformX = p.x + p.w > plat.x && p.x < plat.x + plat.w;
+
+    if (inPlatformX && p.vy >= 0 && prevBottom <= surfaceY + 6 && currBottom >= surfaceY - 1) {
+      p.y = surfaceY - p.h;
+      p.vy = 0;
+      p.onGround = true;
+      continue;
+    }
+
+    if (!overlap(p, plat)) continue;
+
+    // Ignore rectangular body collision while the player is on/near the ridge surface.
+    // This prevents false "inside platform" hits during normal jumps on mountain slopes.
+    const solidBodyTop = plat.y + plat.h * 0.58;
+    if (p.y + p.h <= solidBodyTop) continue;
 
     if (p.vy >= 0 && prevBottom <= plat.y + 6) {
-      p.y = plat.y - p.h;
+      p.y = surfaceY - p.h;
       p.vy = 0;
       p.onGround = true;
       continue;
@@ -600,6 +617,7 @@ function tryStartBoost(dir) {
 }
 
 function pressLeft(now = performance.now()) {
+  if (state.intro || state.gameOver || state.win) return;
   if (!keys.left && now - state.lastTapLeft <= DOUBLE_TAP_WINDOW_MS) {
     tryStartBoost(-1);
   }
@@ -608,6 +626,7 @@ function pressLeft(now = performance.now()) {
 }
 
 function pressRight(now = performance.now()) {
+  if (state.intro || state.gameOver || state.win) return;
   if (!keys.right && now - state.lastTapRight <= DOUBLE_TAP_WINDOW_MS) {
     tryStartBoost(1);
   }
@@ -616,6 +635,7 @@ function pressRight(now = performance.now()) {
 }
 
 function pressJump(now = performance.now()) {
+  if (state.intro || state.gameOver || state.win) return;
   if (!keys.jump) {
     const canJumpBoost =
       now - state.lastTapJump <= JUMP_BOOST_WINDOW_MS && state.jumpBoostCooldown <= 0;
@@ -697,12 +717,36 @@ function drawSky() {
 }
 
 function drawHills() {
-  ctx.fillStyle = '#88d58a';
-  for (let i = 0; i < 8; i += 1) {
-    const baseX = i * 470 - state.cameraX * 0.55;
+  for (let i = 0; i < 7; i += 1) {
+    const baseX = i * 560 - state.cameraX * 0.45;
+    const topY = 290 + (i % 2) * 20;
+    const w = 360 + (i % 3) * 40;
+    const h = 170;
+
+    // Floating shadow
+    ctx.fillStyle = 'rgba(56, 120, 92, 0.22)';
     ctx.beginPath();
-    ctx.moveTo(baseX - 100, HEIGHT);
-    ctx.quadraticCurveTo(baseX + 120, 300, baseX + 340, HEIGHT);
+    ctx.ellipse(baseX + w * 0.5, topY + h + 28, w * 0.36, 22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Island body
+    ctx.fillStyle = '#86d890';
+    ctx.beginPath();
+    ctx.moveTo(baseX, topY + 34);
+    ctx.quadraticCurveTo(baseX + w * 0.24, topY - 42, baseX + w * 0.5, topY - 8);
+    ctx.quadraticCurveTo(baseX + w * 0.76, topY - 44, baseX + w, topY + 30);
+    ctx.quadraticCurveTo(baseX + w * 0.82, topY + h * 0.55, baseX + w * 0.5, topY + h);
+    ctx.quadraticCurveTo(baseX + w * 0.18, topY + h * 0.55, baseX, topY + 34);
+    ctx.closePath();
+    ctx.fill();
+
+    // Island highlight
+    ctx.fillStyle = 'rgba(196, 246, 186, 0.45)';
+    ctx.beginPath();
+    ctx.moveTo(baseX + 24, topY + 26);
+    ctx.quadraticCurveTo(baseX + w * 0.38, topY - 36, baseX + w * 0.6, topY + 8);
+    ctx.quadraticCurveTo(baseX + w * 0.45, topY + 26, baseX + 24, topY + 26);
+    ctx.closePath();
     ctx.fill();
   }
 }
@@ -710,31 +754,126 @@ function drawHills() {
 function drawPlatform(plat) {
   const x = plat.x - state.cameraX;
   const y = plat.y;
-  ctx.fillStyle = '#6bcf65';
-  ctx.fillRect(x, y, plat.w, plat.h);
-  ctx.fillStyle = '#4cab4d';
-  ctx.fillRect(x, y, plat.w, 10);
+  const baseY = y + plat.h;
+  const samples = Math.max(10, Math.floor(plat.w / 20));
+  const step = plat.w / samples;
 
-  for (let px = x; px < x + plat.w; px += 34) {
-    ctx.fillStyle = '#5bb35a';
-    ctx.fillRect(px, y + 16, 18, 9);
+  // Floating aura and soft drop shadow.
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = '#d7fbe1';
+  ctx.beginPath();
+  ctx.ellipse(x + plat.w * 0.5, y + plat.h * 0.45, plat.w * 0.43, plat.h * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.16;
+  ctx.fillStyle = '#316b52';
+  ctx.beginPath();
+  ctx.ellipse(x + plat.w * 0.5, baseY + 18, plat.w * 0.36, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Smooth mountain body
+  ctx.fillStyle = '#5ebc5c';
+  ctx.beginPath();
+  ctx.moveTo(x, baseY);
+  ctx.lineTo(x, getPlatformSurfaceY(plat, plat.x));
+  for (let i = 1; i <= samples; i += 1) {
+    const worldX = plat.x + step * i;
+    ctx.lineTo(x + step * i, getPlatformSurfaceY(plat, worldX));
   }
+  ctx.lineTo(x + plat.w, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Hanging underside to emphasize floating-island look.
+  ctx.fillStyle = '#3f8a43';
+  ctx.beginPath();
+  ctx.moveTo(x + plat.w * 0.18, baseY - 6);
+  ctx.quadraticCurveTo(x + plat.w * 0.3, baseY + 28, x + plat.w * 0.38, baseY + 58);
+  ctx.quadraticCurveTo(x + plat.w * 0.5, baseY + 74, x + plat.w * 0.62, baseY + 58);
+  ctx.quadraticCurveTo(x + plat.w * 0.7, baseY + 28, x + plat.w * 0.82, baseY - 6);
+  ctx.lineTo(x + plat.w * 0.18, baseY - 6);
+  ctx.closePath();
+  ctx.fill();
+
+  // Soft shadow layer
+  ctx.fillStyle = '#4aa34b';
+  ctx.beginPath();
+  ctx.moveTo(x, baseY);
+  ctx.lineTo(x, getPlatformSurfaceY(plat, plat.x) + 18);
+  for (let i = 1; i <= samples; i += 1) {
+    const worldX = plat.x + step * i;
+    ctx.lineTo(x + step * i, getPlatformSurfaceY(plat, worldX) + 18);
+  }
+  ctx.lineTo(x + plat.w, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Bright smooth ridge line
+  ctx.strokeStyle = '#88e07d';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, getPlatformSurfaceY(plat, plat.x));
+  for (let i = 1; i <= samples; i += 1) {
+    const worldX = plat.x + step * i;
+    ctx.lineTo(x + step * i, getPlatformSurfaceY(plat, worldX));
+  }
+  ctx.stroke();
 }
 
 function drawCoins() {
   for (const coin of coins) {
     if (coin.got) continue;
     const x = coin.x - state.cameraX;
+    const t = performance.now() * 0.006 + coin.x * 0.01;
+    const floatY = Math.sin(t) * 6;
+    const pulse = 1 + Math.sin(t * 1.7) * 0.08;
+    const ry = coin.y + floatY;
+    const outer = coin.r * pulse;
+    const inner = outer * 0.5;
+
+    ctx.save();
+    ctx.globalAlpha = 0.24;
+    ctx.fillStyle = '#ffe7a1';
+    ctx.beginPath();
+    ctx.arc(x, ry, (coin.r + 10) * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Star coin
     ctx.fillStyle = '#ffd54f';
     ctx.beginPath();
-    ctx.arc(x, coin.y, coin.r, 0, Math.PI * 2);
+    for (let i = 0; i < 10; i += 1) {
+      const a = -Math.PI / 2 + (Math.PI / 5) * i;
+      const r = i % 2 === 0 ? outer : inner;
+      const px = x + Math.cos(a) * r;
+      const py = ry + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
     ctx.fill();
 
     ctx.strokeStyle = '#ffb300';
     ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(x, coin.y, coin.r - 4, 0, Math.PI * 2);
     ctx.stroke();
+
+    // Inner sparkle
+    ctx.fillStyle = 'rgba(255,245,210,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x, ry - inner * 0.7);
+    ctx.lineTo(x + inner * 0.22, ry - inner * 0.22);
+    ctx.lineTo(x + inner * 0.7, ry);
+    ctx.lineTo(x + inner * 0.22, ry + inner * 0.22);
+    ctx.lineTo(x, ry + inner * 0.7);
+    ctx.lineTo(x - inner * 0.22, ry + inner * 0.22);
+    ctx.lineTo(x - inner * 0.7, ry);
+    ctx.lineTo(x - inner * 0.22, ry - inner * 0.22);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(x - 2, ry - outer - 8, 4, 8);
   }
 }
 
@@ -764,8 +903,17 @@ function drawItems() {
   for (const item of items) {
     if (item.got) continue;
     const x = item.x - state.cameraX;
-    const y = item.y;
-    const pulse = 1 + Math.sin(performance.now() * 0.006 + item.x * 0.01) * 0.08;
+    const t = performance.now() * 0.006 + item.x * 0.01;
+    const y = item.y + Math.sin(t) * 7;
+    const pulse = 1 + Math.sin(t * 1.6) * 0.1;
+
+    ctx.save();
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = item.type === 'time' ? '#9fe6ff' : item.type === 'boost' ? '#ffd18a' : '#b2ffd0';
+    ctx.beginPath();
+    ctx.arc(x, y, (item.r + 10) * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 
     if (item.type === 'time') {
       ctx.fillStyle = '#7fd8ff';
@@ -1033,7 +1181,9 @@ function bindTouchControl(button, onPress, onRelease) {
 
   const press = (e) => {
     e.preventDefault();
+    const wasIntro = state.intro;
     beginTouchInput();
+    if (wasIntro || state.gameOver || state.win) return;
     onPress(performance.now());
   };
   const release = (e) => {
