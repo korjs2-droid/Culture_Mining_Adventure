@@ -36,11 +36,57 @@ const playerVisualOffsetY = 18;
 const playerVisualExtraHeight = 22;
 
 let audioCtx = null;
+let bgmEnabled = false;
+let bgmStep = 0;
+let bgmNextTime = 0;
+
+const bgmPattern = [
+  261.63, 329.63, 392.0, 329.63,
+  293.66, 349.23, 440.0, 349.23,
+  261.63, 329.63, 392.0, 329.63,
+  220.0, 293.66, 349.23, 293.66,
+];
+
 function initAudio() {
   if (audioCtx) return;
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return;
   audioCtx = new Ctx();
+}
+
+function playBgmNote(freq, startTime, duration) {
+  if (!audioCtx || freq <= 0) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, startTime);
+
+  gain.gain.setValueAtTime(0.0001, startTime);
+  gain.gain.linearRampToValueAtTime(0.018, startTime + 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration + 0.02);
+}
+
+function startBgm() {
+  if (!audioCtx || bgmEnabled) return;
+  bgmEnabled = true;
+  bgmStep = 0;
+  bgmNextTime = audioCtx.currentTime + 0.08;
+}
+
+function scheduleBgm() {
+  if (!audioCtx || !bgmEnabled) return;
+  const lookAhead = 0.28;
+  while (bgmNextTime < audioCtx.currentTime + lookAhead) {
+    const freq = bgmPattern[bgmStep % bgmPattern.length];
+    playBgmNote(freq, bgmNextTime, 0.34);
+    bgmNextTime += 0.38;
+    bgmStep += 1;
+  }
 }
 
 function beep(freq, duration, type, volume) {
@@ -727,6 +773,7 @@ function render() {
 }
 
 function update(dt) {
+  scheduleBgm();
   if (state.intro) {
     state.introTime += dt;
     return;
@@ -748,6 +795,7 @@ function update(dt) {
 window.addEventListener('keydown', (e) => {
   initAudio();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  startBgm();
   if (state.intro) {
     if (e.code === 'Space' || e.code === 'Enter') {
       e.preventDefault();
@@ -783,12 +831,14 @@ window.addEventListener('keyup', (e) => {
 canvas.addEventListener('pointerdown', () => {
   initAudio();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  startBgm();
   startGameFromIntro();
 });
 
 function beginTouchInput() {
   initAudio();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  startBgm();
   startGameFromIntro();
 }
 
