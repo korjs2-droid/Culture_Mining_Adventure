@@ -39,6 +39,7 @@ let audioCtx = null;
 let bgmEnabled = false;
 let bgmStep = 0;
 let bgmNextTime = 0;
+let audioUnlocked = false;
 
 const bgmPattern = [
   392.0, 493.88, 587.33, 783.99,
@@ -72,10 +73,26 @@ function playBgmNote(freq, startTime, duration) {
 }
 
 function startBgm() {
-  if (!audioCtx || bgmEnabled) return;
+  if (!audioCtx || bgmEnabled || !audioUnlocked) return;
   bgmEnabled = true;
   bgmStep = 0;
   bgmNextTime = audioCtx.currentTime + 0.08;
+}
+
+function ensureAudioReady() {
+  initAudio();
+  if (!audioCtx) return;
+
+  const start = () => {
+    audioUnlocked = true;
+    startBgm();
+  };
+
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().then(start).catch(() => {});
+  } else {
+    start();
+  }
 }
 
 function scheduleBgm() {
@@ -793,9 +810,7 @@ function update(dt) {
 }
 
 window.addEventListener('keydown', (e) => {
-  initAudio();
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-  startBgm();
+  ensureAudioReady();
   if (state.intro) {
     if (e.code === 'Space' || e.code === 'Enter') {
       e.preventDefault();
@@ -829,16 +844,12 @@ window.addEventListener('keyup', (e) => {
 });
 
 canvas.addEventListener('pointerdown', () => {
-  initAudio();
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-  startBgm();
+  ensureAudioReady();
   startGameFromIntro();
 });
 
 function beginTouchInput() {
-  initAudio();
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-  startBgm();
+  ensureAudioReady();
   startGameFromIntro();
 }
 
@@ -864,6 +875,9 @@ function bindTouchControl(button, onPress, onRelease) {
 bindTouchControl(touchLeftBtn, pressLeft, releaseLeft);
 bindTouchControl(touchRightBtn, pressRight, releaseRight);
 bindTouchControl(touchJumpBtn, pressJump, releaseJump);
+
+// Fallback unlock for browsers that require a direct page interaction.
+window.addEventListener('pointerdown', ensureAudioReady, { passive: true });
 
 let last = performance.now();
 function loop(now) {
