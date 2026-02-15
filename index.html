@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>バナナダッシュ アドベンチャー</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hud">
+        <div><strong>ステージ</strong> <span id="stage">1-1</span></div>
+        <div><strong>コイン</strong> <span id="coin">00</span></div>
+        <div><strong>タイム</strong> <span id="time">120</span></div>
+        <div><strong>ライフ</strong> <span id="life">3</span></div>
+      </header>
+
+      <canvas id="game" width="960" height="540" aria-label="バナナダッシュ アドベンチャー"></canvas>
+
+      <section class="touch-controls" aria-label="モバイル操作">
+        <div class="touch-pad">
+          <button id="touch-left" class="touch-btn" type="button" aria-label="左へ">◀</button>
+          <button id="touch-right" class="touch-btn" type="button" aria-label="右へ">▶</button>
+        </div>
+        <button id="touch-jump" class="touch-btn jump" type="button" aria-label="ジャンプ">JUMP</button>
+      </section>
+
+      <footer class="help">開始: Space / Enter | 移動: ← → / A D (2連打でブースト) | ジャンプ: Space / ↑ / W (2連打でジャンプブースト) | 落下中に壁方向入力で壁スライド/壁ジャンプ | リスタート: R</footer>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
