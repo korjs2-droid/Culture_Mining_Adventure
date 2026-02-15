@@ -95,6 +95,16 @@ function ensureAudioReady() {
   }
 }
 
+function unlockAudioByGesture() {
+  initAudio();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+  audioUnlocked = true;
+  startBgm();
+}
+
 function scheduleBgm() {
   if (!audioCtx || !bgmEnabled) return;
   const lookAhead = 0.28;
@@ -108,6 +118,10 @@ function scheduleBgm() {
 
 function beep(freq, duration, type, volume) {
   if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+    return;
+  }
   const now = audioCtx.currentTime;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
@@ -1153,6 +1167,7 @@ function update(dt) {
 }
 
 window.addEventListener('keydown', (e) => {
+  unlockAudioByGesture();
   ensureAudioReady();
   if (state.intro) {
     if (e.code === 'Space' || e.code === 'Enter') {
@@ -1187,11 +1202,13 @@ window.addEventListener('keyup', (e) => {
 });
 
 canvas.addEventListener('pointerdown', () => {
+  unlockAudioByGesture();
   ensureAudioReady();
   startGameFromIntro();
 });
 
 function beginTouchInput() {
+  unlockAudioByGesture();
   ensureAudioReady();
   startGameFromIntro();
 }
@@ -1222,7 +1239,14 @@ bindTouchControl(touchRightBtn, pressRight, releaseRight);
 bindTouchControl(touchJumpBtn, pressJump, releaseJump);
 
 // Fallback unlock for browsers that require a direct page interaction.
-window.addEventListener('pointerdown', ensureAudioReady, { passive: true });
+window.addEventListener('pointerdown', unlockAudioByGesture, { passive: true });
+window.addEventListener('touchstart', unlockAudioByGesture, { passive: true });
+window.addEventListener('mousedown', unlockAudioByGesture, { passive: true });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    ensureAudioReady();
+  }
+});
 
 let last = performance.now();
 function loop(now) {
