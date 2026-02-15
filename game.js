@@ -141,6 +141,13 @@ function sfxWin() {
   setTimeout(() => beep(1320, 0.16, 'triangle', 0.08), 240);
 }
 
+function sfxFlagDrop() {
+  const notes = [900, 820, 740, 660, 600, 540];
+  notes.forEach((n, i) => {
+    setTimeout(() => beep(n, 0.08, 'triangle', 0.06), i * 85);
+  });
+}
+
 function sfxBoost() {
   beep(650, 0.06, 'square', 0.07);
   setTimeout(() => beep(880, 0.08, 'square', 0.06), 60);
@@ -162,6 +169,8 @@ const state = {
   introTime: 0,
   gameOver: false,
   win: false,
+  clearTimer: 0,
+  flagDrop: 0,
   lastTapLeft: -Infinity,
   lastTapRight: -Infinity,
   lastTapJump: -Infinity,
@@ -291,6 +300,8 @@ function resetGame() {
   state.introTime = 0;
   state.gameOver = false;
   state.win = false;
+  state.clearTimer = 0;
+  state.flagDrop = 0;
   state.lastTapLeft = -Infinity;
   state.lastTapRight = -Infinity;
   state.lastTapJump = -Infinity;
@@ -588,7 +599,10 @@ function updateGoal() {
   const area = { x: goal.x - 28, y: goal.y, w: 70, h: goal.h };
   if (overlap(p, area)) {
     state.win = true;
+    state.clearTimer = 0;
+    state.flagDrop = 0;
     sfxWin();
+    sfxFlagDrop();
   }
 }
 
@@ -977,12 +991,13 @@ function drawGoal() {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(x, goal.y, goal.w, goal.h);
 
-  const wobble = Math.sin(performance.now() * 0.006) * 8;
+  const wobble = state.win ? 0 : Math.sin(performance.now() * 0.006) * 8;
+  const flagY = goal.y + 20 + state.flagDrop;
   ctx.fillStyle = '#4a6bff';
   ctx.beginPath();
-  ctx.moveTo(x + goal.w, goal.y + 20);
-  ctx.lineTo(x + goal.w + 54 + wobble, goal.y + 42);
-  ctx.lineTo(x + goal.w, goal.y + 64);
+  ctx.moveTo(x + goal.w, flagY);
+  ctx.lineTo(x + goal.w + 54 + wobble, flagY + 22);
+  ctx.lineTo(x + goal.w, flagY + 44);
   ctx.closePath();
   ctx.fill();
 }
@@ -1029,6 +1044,7 @@ function drawPlayer() {
 
 function drawOverlay() {
   if (!state.gameOver && !state.win) return;
+  if (state.win && state.clearTimer < 1.25) return;
 
   ctx.fillStyle = 'rgba(14, 28, 46, 0.45)';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -1114,6 +1130,10 @@ function update(dt) {
     return;
   }
   if (state.gameOver || state.win) {
+    if (state.win) {
+      state.clearTimer += dt;
+      state.flagDrop = Math.min(goal.h - 52, state.clearTimer * 120);
+    }
     updateCamera();
     return;
   }
