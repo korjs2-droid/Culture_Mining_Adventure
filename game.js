@@ -146,6 +146,11 @@ function sfxBoost() {
   setTimeout(() => beep(880, 0.08, 'square', 0.06), 60);
 }
 
+function sfxItem() {
+  beep(740, 0.08, 'triangle', 0.08);
+  setTimeout(() => beep(988, 0.11, 'triangle', 0.06), 70);
+}
+
 const state = {
   cameraX: 0,
   timeLeft: 120,
@@ -164,6 +169,9 @@ const state = {
   boostCooldown: 0,
   boostDir: 0,
   jumpBoostCooldown: 0,
+  speedItemTimer: 0,
+  shieldTimer: 0,
+  damageInvuln: 0,
   player: {
     x: 90,
     y: FLOOR_Y - 108,
@@ -217,6 +225,23 @@ const coins = [
   { x: 2890, y: 210, r: 12, got: false },
   { x: 2990, y: 210, r: 12, got: false },
   { x: 3210, y: 400, r: 12, got: false },
+  { x: 560, y: 400, r: 12, got: false },
+  { x: 620, y: 400, r: 12, got: false },
+  { x: 680, y: 400, r: 12, got: false },
+  { x: 940, y: 255, r: 12, got: false },
+  { x: 1240, y: 350, r: 12, got: false },
+  { x: 1400, y: 350, r: 12, got: false },
+  { x: 1600, y: 220, r: 12, got: false },
+  { x: 1700, y: 220, r: 12, got: false },
+  { x: 1980, y: 340, r: 12, got: false },
+  { x: 2050, y: 340, r: 12, got: false },
+  { x: 2210, y: 240, r: 12, got: false },
+  { x: 2390, y: 240, r: 12, got: false },
+  { x: 2720, y: 310, r: 12, got: false },
+  { x: 2810, y: 210, r: 12, got: false },
+  { x: 3070, y: 390, r: 12, got: false },
+  { x: 3370, y: 390, r: 12, got: false },
+  { x: 3460, y: 390, r: 12, got: false },
 ];
 
 const enemies = [
@@ -233,6 +258,24 @@ const goal = {
   h: 190,
 };
 
+const spikes = [
+  { x: 600, y: FLOOR_Y - 18, w: 52, h: 18 },
+  { x: 980, y: FLOOR_Y - 18, w: 58, h: 18 },
+  { x: 1640, y: FLOOR_Y - 18, w: 66, h: 18 },
+  { x: 2360, y: FLOOR_Y - 18, w: 62, h: 18 },
+  { x: 3090, y: FLOOR_Y - 18, w: 66, h: 18 },
+  { x: 1460, y: 242, w: 46, h: 18 },
+  { x: 2860, y: 232, w: 46, h: 18 },
+];
+
+const items = [
+  { x: 1110, y: 265, r: 14, type: 'time', got: false },
+  { x: 1760, y: 305, r: 14, type: 'boost', got: false },
+  { x: 2320, y: 230, r: 14, type: 'shield', got: false },
+  { x: 2960, y: 190, r: 14, type: 'time', got: false },
+  { x: 3330, y: 360, r: 14, type: 'boost', got: false },
+];
+
 function resetPlayerPosition() {
   state.player.x = 90;
   state.player.y = FLOOR_Y - state.player.h;
@@ -243,6 +286,7 @@ function resetPlayerPosition() {
   state.boostTimer = 0;
   state.boostDir = 0;
   state.jumpBoostCooldown = 0;
+  state.damageInvuln = 0.7;
 }
 
 function resetGame() {
@@ -259,9 +303,13 @@ function resetGame() {
   state.lastTapRight = -Infinity;
   state.lastTapJump = -Infinity;
   state.boostCooldown = 0;
+  state.speedItemTimer = 0;
+  state.shieldTimer = 0;
+  state.damageInvuln = 0;
 
   for (const coin of coins) coin.got = false;
   for (const enemy of enemies) enemy.dead = false;
+  for (const item of items) item.got = false;
 
   resetPlayerPosition();
   updateHud();
@@ -303,6 +351,13 @@ function overlap(a, b) {
 }
 
 function respawnOrLose() {
+  if (state.damageInvuln > 0) return;
+  if (state.shieldTimer > 0) {
+    state.shieldTimer = 0;
+    state.damageInvuln = 1.0;
+    sfxItem();
+    return;
+  }
   state.lives -= 1;
   sfxHit();
   if (state.lives <= 0) {
@@ -316,9 +371,10 @@ function respawnOrLose() {
 function updatePlayer(dt) {
   const p = state.player;
 
+  const speedItem = state.speedItemTimer > 0;
   const boosting = state.boostTimer > 0;
-  const accel = boosting ? 2600 : 1500;
-  const maxSpeed = boosting ? 520 : 300;
+  const accel = boosting ? 2600 : speedItem ? 2050 : 1500;
+  const maxSpeed = boosting ? 520 : speedItem ? 420 : 300;
   const friction = 1900;
 
   if (boosting) {
@@ -471,6 +527,40 @@ function updateCoins() {
       state.coins += 1;
       sfxCoin();
       updateHud();
+    }
+  }
+}
+
+function updateItems() {
+  const p = state.player;
+  for (const item of items) {
+    if (item.got) continue;
+    const hit =
+      p.x < item.x + item.r &&
+      p.x + p.w > item.x - item.r &&
+      p.y < item.y + item.r &&
+      p.y + p.h > item.y - item.r;
+
+    if (!hit) continue;
+    item.got = true;
+    sfxItem();
+    if (item.type === 'time') {
+      state.timeLeft += 18;
+    } else if (item.type === 'boost') {
+      state.speedItemTimer = 8;
+    } else if (item.type === 'shield') {
+      state.shieldTimer = 12;
+    }
+    updateHud();
+  }
+}
+
+function updateHazards() {
+  const p = state.player;
+  for (const spike of spikes) {
+    if (overlap(p, spike)) {
+      respawnOrLose();
+      break;
     }
   }
 }
@@ -648,6 +738,72 @@ function drawCoins() {
   }
 }
 
+function drawSpikes() {
+  for (const spike of spikes) {
+    const x = spike.x - state.cameraX;
+    const y = spike.y;
+    const peaks = Math.max(2, Math.floor(spike.w / 14));
+    const step = spike.w / peaks;
+
+    ctx.fillStyle = '#d74f4f';
+    ctx.beginPath();
+    ctx.moveTo(x, y + spike.h);
+    for (let i = 0; i < peaks; i += 1) {
+      ctx.lineTo(x + step * i + step / 2, y);
+      ctx.lineTo(x + step * (i + 1), y + spike.h);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#8d2c2c';
+    ctx.fillRect(x, y + spike.h - 4, spike.w, 4);
+  }
+}
+
+function drawItems() {
+  for (const item of items) {
+    if (item.got) continue;
+    const x = item.x - state.cameraX;
+    const y = item.y;
+    const pulse = 1 + Math.sin(performance.now() * 0.006 + item.x * 0.01) * 0.08;
+
+    if (item.type === 'time') {
+      ctx.fillStyle = '#7fd8ff';
+      ctx.beginPath();
+      ctx.arc(x, y, item.r * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#165e86';
+      ctx.fillRect(x - 2, y - 8, 4, 10);
+      ctx.fillRect(x - 2, y + 4, 8, 4);
+    } else if (item.type === 'boost') {
+      ctx.fillStyle = '#ffbd59';
+      ctx.beginPath();
+      ctx.arc(x, y, item.r * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#8a4e00';
+      ctx.beginPath();
+      ctx.moveTo(x - 5, y + 6);
+      ctx.lineTo(x + 2, y - 1);
+      ctx.lineTo(x - 1, y - 1);
+      ctx.lineTo(x + 5, y - 9);
+      ctx.lineTo(x + 1, y - 1);
+      ctx.lineTo(x + 4, y - 1);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#8be0aa';
+      ctx.beginPath();
+      ctx.arc(x, y, item.r * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#2f7d4c';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, item.r * pulse - 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
 function drawEnemy(e) {
   if (e.dead) return;
   const x = e.x - state.cameraX;
@@ -689,7 +845,19 @@ function drawPlayer() {
   const drawY = p.y + playerVisualOffsetY;
   const drawH = p.h + playerVisualExtraHeight;
 
+  if (state.shieldTimer > 0) {
+    const aura = 0.2 + Math.sin(performance.now() * 0.01) * 0.08;
+    ctx.save();
+    ctx.globalAlpha = aura;
+    ctx.fillStyle = '#85ffd3';
+    ctx.beginPath();
+    ctx.ellipse(x + p.w / 2, drawY + drawH / 2, p.w * 0.62, drawH * 0.54, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   if (playerImageReady) {
+    if (state.damageInvuln > 0 && Math.sin(performance.now() * 0.05) > 0.2) return;
     ctx.save();
     if (p.facing < 0) {
       ctx.translate(x + p.w, drawY);
@@ -783,6 +951,8 @@ function render() {
   drawHills();
   for (const plat of platforms) drawPlatform(plat);
   drawCoins();
+  drawItems();
+  drawSpikes();
   for (const enemy of enemies) drawEnemy(enemy);
   drawGoal();
   drawPlayer();
@@ -801,11 +971,16 @@ function update(dt) {
   }
 
   updatePlayer(dt);
+  updateHazards();
   updateEnemies(dt);
   updateCoins();
+  updateItems();
   updateGoal();
   updateTimer(dt);
   state.jumpBoostCooldown = Math.max(0, state.jumpBoostCooldown - dt);
+  state.speedItemTimer = Math.max(0, state.speedItemTimer - dt);
+  state.shieldTimer = Math.max(0, state.shieldTimer - dt);
+  state.damageInvuln = Math.max(0, state.damageInvuln - dt);
   updateCamera();
 }
 
