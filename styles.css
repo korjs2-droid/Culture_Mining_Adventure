@@ -68,6 +68,17 @@ body {
   color: #2f5678;
 }
 
+.ai-link {
+  text-align: center;
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.ai-link a {
+  color: #1d4f79;
+  font-weight: 700;
+}
+
 .touch-controls {
   display: none;
 }
