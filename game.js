@@ -19,6 +19,8 @@ const keys = {
   left: false,
   right: false,
   jump: false,
+  up: false,
+  down: false,
 };
 const DOUBLE_TAP_WINDOW_MS = 260;
 const BOOST_DURATION = 0.35;
@@ -26,14 +28,547 @@ const BOOST_COOLDOWN = 0.45;
 const JUMP_BOOST_WINDOW_MS = 260;
 const JUMP_BOOST_COOLDOWN = 0.35;
 
-const playerImage = new Image();
-playerImage.src = 'character.png';
+const spriteSheet = {
+  image: new Image(),
+  renderImage: null,
+  ready: false,
+  frameWidth: 256,
+  frameHeight: 384,
+  frames: [],
+  animations: {
+    idle: [0],
+    walk: [0],
+    run: [0],
+    jump: [0],
+  },
+  frontFrameIndex: 0,
+  backFrameIndex: -1,
+};
 let playerImageReady = false;
-playerImage.addEventListener('load', () => {
+
+const playerAnim = {
+  name: 'idle',
+  frameCursor: 0,
+  timer: 0,
+};
+
+const introCharacterImage = new Image();
+let introCharacterReady = false;
+introCharacterImage.onload = () => {
+  introCharacterReady = true;
+};
+introCharacterImage.src = 'character.png';
+
+function buildVisibleSpriteSheetImage() {
+  const src = spriteSheet.image;
+  if (!src.width || !src.height) return;
+
+  const off = document.createElement('canvas');
+  off.width = src.width;
+  off.height = src.height;
+  const octx = off.getContext('2d', { willReadFrequently: true });
+  octx.drawImage(src, 0, 0);
+
+  const imageData = octx.getImageData(0, 0, off.width, off.height);
+  const d = imageData.data;
+  const w = off.width;
+  const h = off.height;
+
+  // Estimate matte/background color from the 4 corners.
+  const corner = (x, y) => {
+    const idx = (y * w + x) * 4;
+    return [d[idx], d[idx + 1], d[idx + 2]];
+  };
+  const c1 = corner(0, 0);
+  const c2 = corner(w - 1, 0);
+  const c3 = corner(0, h - 1);
+  const c4 = corner(w - 1, h - 1);
+  const bgR = Math.round((c1[0] + c2[0] + c3[0] + c4[0]) / 4);
+  const bgG = Math.round((c1[1] + c2[1] + c3[1] + c4[1]) / 4);
+  const bgB = Math.round((c1[2] + c2[2] + c3[2] + c4[2]) / 4);
+
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i];
+    const g = d[i + 1];
+    const b = d[i + 2];
+    const a = d[i + 3];
+    if (a === 0) continue;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const sat = max === 0 ? 0 : (max - min) / max;
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const bgDist = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
+
+    // Remove matte-like fringe, but preserve thin head-tip details.
+    if (
+      (luma > 242 && sat < 0.1) ||
+      (a < 52 && luma > 170 && sat < 0.22) ||
+      (a < 95 && bgDist < 30)
+    ) {
+      d[i + 3] = 0;
+      continue;
+    }
+
+    d[i] = Math.min(255, Math.round(r * 1.02 + 3));
+    d[i + 1] = Math.min(255, Math.round(g * 1.02 + 3));
+    d[i + 2] = Math.min(255, Math.round(b * 1.02 + 3));
+    d[i + 3] = Math.min(255, Math.round(a * 1.28));
+  }
+
+  // Remove only truly isolated speckles.
+  const alpha = new Uint8ClampedArray(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      alpha[y * w + x] = d[(y * w + x) * 4 + 3];
+    }
+  }
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      const idx = y * w + x;
+      const a = alpha[idx];
+      if (a === 0) continue;
+      let neighbors = 0;
+      for (let oy = -1; oy <= 1; oy += 1) {
+        for (let ox = -1; ox <= 1; ox += 1) {
+          if (ox === 0 && oy === 0) continue;
+          if (alpha[(y + oy) * w + (x + ox)] > 40) neighbors += 1;
+        }
+      }
+      if (neighbors === 0 && a < 120) {
+        d[idx * 4 + 3] = 0;
+      }
+    }
+  }
+  octx.putImageData(imageData, 0, 0);
+  spriteSheet.renderImage = off;
+}
+
+function cropAlphaBounds(img) {
+  const off = document.createElement('canvas');
+  off.width = img.width;
+  off.height = img.height;
+  const octx = off.getContext('2d', { willReadFrequently: true });
+  octx.drawImage(img, 0, 0);
+  const d = octx.getImageData(0, 0, off.width, off.height).data;
+  let minX = off.width;
+  let minY = off.height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < off.height; y += 1) {
+    for (let x = 0; x < off.width; x += 1) {
+      if (d[(y * off.width + x) * 4 + 3] > 20) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) {
+    return { x: 0, y: 0, w: img.width, h: img.height };
+  }
+  const pad = 6;
+  return {
+    x: Math.max(0, minX - pad),
+    y: Math.max(0, minY - pad),
+    w: Math.min(img.width - Math.max(0, minX - pad), (maxX - minX + 1) + pad * 2),
+    h: Math.min(img.height - Math.max(0, minY - pad), (maxY - minY + 1) + pad * 2),
+  };
+}
+
+function drawCharacterPoseFrame(srcImg, srcRect, pose, frameW, frameH) {
+  const frame = document.createElement('canvas');
+  frame.width = frameW;
+  frame.height = frameH;
+  const g = frame.getContext('2d');
+
+  const anchorX = frameW * 0.5;
+  const anchorY = frameH * 0.95;
+  const drawH = frameH * 0.86;
+  const drawW = frameW * 0.66;
+
+  const headRatio = 0.42;
+  const torsoRatio = 0.34;
+  const legsRatio = 1 - headRatio - torsoRatio;
+
+  const srcHeadH = srcRect.h * headRatio;
+  const srcTorsoY = srcHeadH;
+  const srcTorsoH = srcRect.h * torsoRatio;
+  const srcLegY = srcTorsoY + srcTorsoH;
+  const srcLegH = srcRect.h - srcLegY;
+
+  const dstHeadH = drawH * headRatio;
+  const dstTorsoY = -drawH * 0.95 + dstHeadH;
+  const dstTorsoH = drawH * torsoRatio;
+  const dstLegY = dstTorsoY + dstTorsoH;
+  const dstLegH = drawH * legsRatio;
+
+  const step = pose.step || 0;
+  const bob = pose.bob || 0;
+  const tilt = pose.tilt || 0;
+  const bodyLift = pose.bodyLift || 0;
+  const headLift = pose.headLift || 0;
+  const yaw = pose.yaw == null ? 1 : pose.yaw;
+  const sideBias = pose.sideBias || 0;
+  const legWidthScale = pose.legWidthScale == null ? 1 : pose.legWidthScale;
+  const torsoWidthScale = pose.torsoWidthScale == null ? 1 : pose.torsoWidthScale;
+  const headWidthScale = pose.headWidthScale == null ? 1 : pose.headWidthScale;
+  const legSwing = step * 5.5;
+  const legLiftL = Math.max(0, -step) * 4.6 + (pose.legTuck || 0);
+  const legLiftR = Math.max(0, step) * 4.6 + (pose.legTuck || 0);
+
+  g.save();
+  g.translate(anchorX, anchorY - bob);
+  g.rotate(tilt);
+  g.scale((1 + (pose.stretchX || 0)) * yaw, 1 + (pose.stretchY || 0));
+
+  g.save();
+  g.beginPath();
+  g.rect(-drawW / 2, dstLegY, drawW / 2, dstLegH + 12);
+  g.clip();
+  g.drawImage(
+    srcImg,
+    srcRect.x,
+    srcRect.y + srcLegY,
+    srcRect.w,
+    srcLegH,
+    -drawW / 2 - legSwing + sideBias * 0.2,
+    dstLegY - legLiftL,
+    drawW * legWidthScale,
+    dstLegH + legLiftL * 0.5
+  );
+  g.restore();
+
+  g.save();
+  g.beginPath();
+  g.rect(0, dstLegY, drawW / 2, dstLegH + 12);
+  g.clip();
+  g.drawImage(
+    srcImg,
+    srcRect.x,
+    srcRect.y + srcLegY,
+    srcRect.w,
+    srcLegH,
+    -drawW / 2 + legSwing + sideBias * 0.2,
+    dstLegY - legLiftR,
+    drawW * legWidthScale,
+    dstLegH + legLiftR * 0.5
+  );
+  g.restore();
+
+  g.save();
+  g.translate(step * 1.4 + sideBias, -bodyLift);
+  g.drawImage(
+    srcImg,
+    srcRect.x,
+    srcRect.y + srcTorsoY,
+    srcRect.w,
+    srcTorsoH,
+    -drawW * torsoWidthScale / 2,
+    dstTorsoY,
+    drawW * torsoWidthScale,
+    dstTorsoH
+  );
+  g.restore();
+
+  g.save();
+  g.translate(step * 0.8 + sideBias * 0.7, -bodyLift - headLift);
+  g.drawImage(
+    srcImg,
+    srcRect.x,
+    srcRect.y,
+    srcRect.w,
+    srcHeadH,
+    -drawW * headWidthScale / 2,
+    -drawH * 0.95,
+    drawW * headWidthScale,
+    dstHeadH
+  );
+  g.restore();
+
+  g.restore();
+  return frame;
+}
+
+function buildGeneratedCharacterAtlas(baseImg) {
+  const frameWidth = 256;
+  const frameHeight = 384;
+  const srcRect = cropAlphaBounds(baseImg);
+
+  const idlePoses = [
+    { step: -0.12, bob: 0.2, tilt: -0.004, bodyLift: 0.2, headLift: 0.1, stretchX: 0.004, stretchY: -0.004, yaw: 0.96, sideBias: -0.6 },
+    { step: 0.15, bob: 0.9, tilt: 0.008, bodyLift: 0.4, headLift: 0.25, stretchX: 0.008, stretchY: -0.008, yaw: 0.94, sideBias: 0.8 },
+    { step: 0.1, bob: 0.5, tilt: 0.003, bodyLift: 0.2, headLift: 0.1, stretchX: 0.003, stretchY: -0.003, yaw: 0.95, sideBias: 0.5 },
+    { step: -0.16, bob: 0.9, tilt: -0.008, bodyLift: 0.4, headLift: 0.25, stretchX: 0.008, stretchY: -0.008, yaw: 0.94, sideBias: -0.8 },
+  ];
+  const walkPoses = [
+    { step: -0.62, bob: 1.2, tilt: -0.014, bodyLift: 0.7, headLift: 0.55, stretchX: 0.018, stretchY: -0.017, yaw: 0.9, sideBias: 1.4, legWidthScale: 0.95, torsoWidthScale: 0.94, headWidthScale: 0.92 },
+    { step: -0.28, bob: 0.7, tilt: -0.008, bodyLift: 0.45, headLift: 0.35, stretchX: 0.013, stretchY: -0.012, yaw: 0.92, sideBias: 1.2, legWidthScale: 0.96, torsoWidthScale: 0.95, headWidthScale: 0.93 },
+    { step: 0.08, bob: 0.45, tilt: -0.002, bodyLift: 0.28, headLift: 0.2, stretchX: 0.01, stretchY: -0.01, yaw: 0.93, sideBias: 1.0, legWidthScale: 0.97, torsoWidthScale: 0.96, headWidthScale: 0.94 },
+    { step: 0.62, bob: 1.2, tilt: 0.014, bodyLift: 0.7, headLift: 0.55, stretchX: 0.018, stretchY: -0.017, yaw: 0.9, sideBias: 1.4, legWidthScale: 0.95, torsoWidthScale: 0.94, headWidthScale: 0.92 },
+    { step: 0.28, bob: 0.7, tilt: 0.008, bodyLift: 0.45, headLift: 0.35, stretchX: 0.013, stretchY: -0.012, yaw: 0.92, sideBias: 1.2, legWidthScale: 0.96, torsoWidthScale: 0.95, headWidthScale: 0.93 },
+    { step: -0.08, bob: 0.45, tilt: 0.002, bodyLift: 0.28, headLift: 0.2, stretchX: 0.01, stretchY: -0.01, yaw: 0.93, sideBias: 1.0, legWidthScale: 0.97, torsoWidthScale: 0.96, headWidthScale: 0.94 },
+  ];
+  const runPoses = [
+    { step: -1.0, bob: 2.8, tilt: -0.03, bodyLift: 1.4, headLift: 1.2, stretchX: 0.034, stretchY: -0.032, yaw: 0.78, sideBias: 2.8, legWidthScale: 0.88, torsoWidthScale: 0.86, headWidthScale: 0.83 },
+    { step: -0.7, bob: 2.1, tilt: -0.024, bodyLift: 1.0, headLift: 0.9, stretchX: 0.03, stretchY: -0.028, yaw: 0.8, sideBias: 2.5, legWidthScale: 0.9, torsoWidthScale: 0.88, headWidthScale: 0.84 },
+    { step: -0.3, bob: 1.2, tilt: -0.014, bodyLift: 0.7, headLift: 0.5, stretchX: 0.024, stretchY: -0.022, yaw: 0.84, sideBias: 2.2, legWidthScale: 0.92, torsoWidthScale: 0.9, headWidthScale: 0.86 },
+    { step: 0.2, bob: 1.1, tilt: -0.006, bodyLift: 0.6, headLift: 0.4, stretchX: 0.02, stretchY: -0.02, yaw: 0.87, sideBias: 2.0, legWidthScale: 0.94, torsoWidthScale: 0.92, headWidthScale: 0.88 },
+    { step: 0.95, bob: 2.8, tilt: 0.028, bodyLift: 1.4, headLift: 1.2, stretchX: 0.034, stretchY: -0.032, yaw: 0.78, sideBias: 2.8, legWidthScale: 0.88, torsoWidthScale: 0.86, headWidthScale: 0.83 },
+    { step: 0.7, bob: 2.1, tilt: 0.024, bodyLift: 1.0, headLift: 0.9, stretchX: 0.03, stretchY: -0.028, yaw: 0.8, sideBias: 2.5, legWidthScale: 0.9, torsoWidthScale: 0.88, headWidthScale: 0.84 },
+    { step: 0.3, bob: 1.2, tilt: 0.014, bodyLift: 0.7, headLift: 0.5, stretchX: 0.024, stretchY: -0.022, yaw: 0.84, sideBias: 2.2, legWidthScale: 0.92, torsoWidthScale: 0.9, headWidthScale: 0.86 },
+    { step: -0.2, bob: 1.1, tilt: 0.006, bodyLift: 0.6, headLift: 0.4, stretchX: 0.02, stretchY: -0.02, yaw: 0.87, sideBias: 2.0, legWidthScale: 0.94, torsoWidthScale: 0.92, headWidthScale: 0.88 },
+  ];
+  const jumpPoses = [
+    { step: -0.2, bob: 0.8, tilt: -0.016, bodyLift: 1.1, headLift: 1.7, legTuck: 2.7, stretchX: 0.012, stretchY: -0.02, yaw: 0.86, sideBias: 1.8 },
+    { step: -0.05, bob: 0.45, tilt: -0.006, bodyLift: 1.5, headLift: 2.1, legTuck: 3.7, stretchX: 0.015, stretchY: -0.024, yaw: 0.85, sideBias: 1.8 },
+    { step: 0.08, bob: 0.3, tilt: 0.004, bodyLift: 1.3, headLift: 1.8, legTuck: 3.1, stretchX: 0.012, stretchY: -0.022, yaw: 0.85, sideBias: 1.8 },
+    { step: 0.22, bob: 1.0, tilt: 0.016, bodyLift: 0.9, headLift: 1.2, legTuck: 2.2, stretchX: 0.009, stretchY: -0.016, yaw: 0.87, sideBias: 1.8 },
+  ];
+
+  const allPoses = [...idlePoses, ...walkPoses, ...runPoses, ...jumpPoses];
+  const cols = 4;
+  const rows = Math.ceil(allPoses.length / cols);
+  const atlas = document.createElement('canvas');
+  atlas.width = cols * frameWidth;
+  atlas.height = rows * frameHeight;
+  const g = atlas.getContext('2d');
+
+  const frames = [];
+  allPoses.forEach((pose, i) => {
+    const fx = (i % cols) * frameWidth;
+    const fy = Math.floor(i / cols) * frameHeight;
+    const frame = drawCharacterPoseFrame(baseImg, srcRect, pose, frameWidth, frameHeight);
+    g.drawImage(frame, fx, fy);
+    frames.push({ x: fx, y: fy, w: frameWidth, h: frameHeight });
+  });
+
+  spriteSheet.frameWidth = frameWidth;
+  spriteSheet.frameHeight = frameHeight;
+  spriteSheet.frames = frames;
+  spriteSheet.animations.idle = [0, 1, 2, 3];
+  spriteSheet.animations.walk = [4, 5, 6, 7, 8, 9];
+  spriteSheet.animations.run = [10, 11, 12, 13, 14, 15, 16, 17];
+  spriteSheet.animations.jump = [18, 19, 20, 21];
+  spriteSheet.image = atlas;
+  spriteSheet.renderImage = atlas;
+  spriteSheet.ready = true;
   playerImageReady = true;
-});
+}
+
+async function loadBananaSpritePack() {
+  try {
+    const loadImage = (src) =>
+      new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`Failed to load ${src}`));
+        img.src = src;
+      });
+
+    // 1) Preferred: use pre-cut frames from exports
+    const frameSets = [
+      Array.from({ length: 20 }, (_, i) => `ch/character_exact_${String(i + 1).padStart(2, '0')}.png`),
+      Array.from({ length: 16 }, (_, i) => `exports/character_16_nukki_frames/frame_${String(i).padStart(2, '0')}.png`),
+      Array.from({ length: 16 }, (_, i) => `frames/banana_${String(i).padStart(2, '0')}.png`),
+    ];
+    try {
+      let frameImgs = null;
+      let usedNames = null;
+      for (const paths of frameSets) {
+        try {
+          frameImgs = await Promise.all(paths.map((p) => loadImage(p)));
+          usedNames = paths.map((p) => p.split('/').pop() || p);
+          break;
+        } catch (_) {
+          // try next frame set
+        }
+      }
+      if (!frameImgs || !usedNames) {
+        throw new Error('No frame set found');
+      }
+
+      const fw = frameImgs[0].width;
+      const fh = frameImgs[0].height;
+      const count = frameImgs.length;
+      const cols = count >= 20 ? 5 : 4;
+      const rows = Math.ceil(count / cols);
+      const atlas = document.createElement('canvas');
+      atlas.width = fw * cols;
+      atlas.height = fh * rows;
+      const g = atlas.getContext('2d');
+      const frames = [];
+
+      frameImgs.forEach((img, i) => {
+        const x = (i % cols) * fw;
+        const y = Math.floor(i / cols) * fh;
+        g.drawImage(img, x, y);
+        frames.push({ filename: usedNames[i], x, y, w: fw, h: fh });
+      });
+
+      // Optional front-facing idle start frame (kept same size as other frames).
+      const frontCandidates = [
+        'ch/character_exact_0.PNG',
+        'ch/character_exact_0.png',
+        'ch/front.png',
+        'ch/front.PNG',
+        'ch.PNG',
+      ];
+      for (const frontPath of frontCandidates) {
+        try {
+          const front = await loadImage(`${frontPath}?v=${Date.now()}`);
+          const fx = frames[0]?.x ?? 0;
+          const fy = frames[0]?.y ?? 0;
+          g.clearRect(fx, fy, fw, fh);
+
+          // Normalize the source first, remove dark matte, then trim content bounds.
+          const raw = document.createElement('canvas');
+          raw.width = front.width;
+          raw.height = front.height;
+          const rg = raw.getContext('2d', { willReadFrequently: true });
+          rg.drawImage(front, 0, 0);
+          const rawData = rg.getImageData(0, 0, raw.width, raw.height);
+          const px = rawData.data;
+          for (let i = 0; i < px.length; i += 4) {
+            const r = px[i];
+            const gg = px[i + 1];
+            const b = px[i + 2];
+            // Remove near-black backdrop around character.
+            if (r < 20 && gg < 24 && b < 28) px[i + 3] = 0;
+          }
+          rg.putImageData(rawData, 0, 0);
+
+          let minX = raw.width;
+          let minY = raw.height;
+          let maxX = -1;
+          let maxY = -1;
+          for (let y = 0; y < raw.height; y += 1) {
+            for (let x = 0; x < raw.width; x += 1) {
+              const a = px[(y * raw.width + x) * 4 + 3];
+              if (a > 18) {
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+              }
+            }
+          }
+
+          const hasBounds = maxX >= minX && maxY >= minY;
+          const cropX = hasBounds ? minX : 0;
+          const cropY = hasBounds ? minY : 0;
+          const cropW = hasBounds ? maxX - minX + 1 : raw.width;
+          const cropH = hasBounds ? maxY - minY + 1 : raw.height;
+
+          const fitScale = Math.min((fw * 0.9) / cropW, (fh * 0.95) / cropH) * 0.8;
+          const dw = Math.round(cropW * fitScale);
+          const dh = Math.round(cropH * fitScale);
+          const dx = fx + Math.round((fw - dw) * 0.5);
+          const dy = fy + fh - dh; // exact ground contact like other frames
+          g.drawImage(raw, cropX, cropY, cropW, cropH, dx, dy, dw, dh);
+          frames[0].filename = frontPath.split('/').pop() || frontPath;
+          break;
+        } catch (_) {
+          // try next candidate
+        }
+      }
+
+      spriteSheet.frameWidth = fw;
+      spriteSheet.frameHeight = fh;
+      spriteSheet.frames = frames;
+      spriteSheet.frontFrameIndex = 0;
+      spriteSheet.backFrameIndex = frames.findIndex((f) =>
+        /^character_exact_01\.png$/i.test(String(f.filename || ''))
+      );
+      if (spriteSheet.backFrameIndex < 0 && frames.length > 1) {
+        spriteSheet.backFrameIndex = 1;
+      }
+      if (count >= 20) {
+        // ch folder: 20 frames
+        spriteSheet.animations.idle = [0, 1, 2, 3];
+        spriteSheet.animations.walk = [4, 5, 6, 7, 8, 9];
+        spriteSheet.animations.run = [10, 11, 12, 13, 14, 15];
+        spriteSheet.animations.jump = [16, 17, 18];
+      } else {
+        // 16-frame fallback sets
+        spriteSheet.animations.idle = [0, 1, 2, 3];
+        spriteSheet.animations.walk = [4, 5, 6, 7];
+        spriteSheet.animations.run = [8, 9, 10, 11];
+        spriteSheet.animations.jump = [12, 13, 14];
+      }
+      spriteSheet.image = atlas;
+      spriteSheet.renderImage = atlas;
+      spriteSheet.ready = true;
+      playerImageReady = true;
+      return;
+    } catch (_) {
+      // continue to json-based fallback
+    }
+
+    // 2) Fallback: atlas json+png
+    let data = null;
+    const jsonCandidates = [
+      'assets/character_sheet_cut.json',
+      'assets/character_reference_sheet.json',
+      'assets/character_fullbody_sprite.json',
+    ];
+    for (const path of jsonCandidates) {
+      const res = await fetch(path);
+      if (res.ok) {
+        data = await res.json();
+        break;
+      }
+    }
+    if (!data) throw new Error('No sprite json found');
+
+    spriteSheet.frameWidth = data.frameWidth || spriteSheet.frameWidth;
+    spriteSheet.frameHeight = data.frameHeight || spriteSheet.frameHeight;
+    spriteSheet.frames = Array.isArray(data.frames) ? data.frames : [];
+
+    const anims = data.animations || {};
+    const asNums = (arr) =>
+      (Array.isArray(arr) ? arr.map((n) => Number(n)).filter((n) => Number.isFinite(n)) : []);
+    const idle = asNums(anims.idle);
+    const walk = asNums(anims.walk);
+    const run = asNums(anims.run);
+    const jump = asNums(anims.jump);
+
+    if (idle.length) spriteSheet.animations.idle = idle;
+    if (walk.length) spriteSheet.animations.walk = walk;
+    if (run.length) spriteSheet.animations.run = run;
+    if (jump.length) spriteSheet.animations.jump = jump;
+    // Derive walk from run when a dedicated walk strip is absent.
+    if (!walk.length) spriteSheet.animations.walk = run.length >= 4
+      ? [run[1], run[3], run[5] ?? run[1], run[7] ?? run[3]]
+      : (run.length ? run.slice() : spriteSheet.animations.idle.slice());
+
+    spriteSheet.image.onload = () => {
+      // This atlas is already clean output for direct game usage.
+      spriteSheet.renderImage = spriteSheet.image;
+      spriteSheet.ready = true;
+      playerImageReady = true;
+    };
+    const imageFile = data.image || 'character_reference_sheet.png';
+    spriteSheet.image.src = `assets/${imageFile}`;
+  } catch (err) {
+    // Fallback: generate frames from the base art at runtime.
+    const baseImg = new Image();
+    baseImg.onload = () => {
+      buildGeneratedCharacterAtlas(baseImg);
+    };
+    baseImg.src = 'character.png';
+    console.error('Failed to load prebuilt character sprite, fallback to runtime generation:', err);
+  }
+}
+
+loadBananaSpritePack();
 const playerVisualOffsetY = 18;
 const playerVisualExtraHeight = 22;
+const playerSpriteOriginX = 0.5;
+const playerSpriteOriginY = 0.95;
+const playerSpriteRenderScale = 1.2;
+const playerGroundSnapOffset = 24;
 
 let audioCtx = null;
 let bgmEnabled = false;
@@ -206,6 +741,7 @@ const state = {
     onWallSlide: false,
     wallSlideDir: 0,
     facing: 1,
+    facingVisual: 1,
   },
   clouds: [
     { x: 100, y: 80, s: 0.9 },
@@ -298,6 +834,8 @@ function resetPlayerPosition() {
   state.player.vy = 0;
   state.player.onWallSlide = false;
   state.player.wallSlideDir = 0;
+  state.player.facing = 1;
+  state.player.facingVisual = 1;
   state.boostTimer = 0;
   state.boostDir = 0;
   state.jumpBoostCooldown = 0;
@@ -328,6 +866,7 @@ function resetGame() {
   for (const enemy of enemies) enemy.dead = false;
   for (const item of items) item.got = false;
 
+  setPlayerAnimation('idle');
   resetPlayerPosition();
   updateHud();
 }
@@ -341,6 +880,102 @@ function updateHud() {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function setPlayerAnimation(name) {
+  if (playerAnim.name === name) return;
+  playerAnim.name = name;
+  playerAnim.frameCursor = 0;
+  playerAnim.timer = 0;
+}
+
+function updatePlayerAnimation(dt) {
+  const p = state.player;
+  if (!p.onGround) {
+    setPlayerAnimation('jump');
+  } else {
+    const speed = Math.abs(p.vx);
+    if (speed > 210) {
+      setPlayerAnimation('run');
+    } else if (speed > 26) {
+      setPlayerAnimation('walk');
+    } else {
+      setPlayerAnimation('idle');
+    }
+  }
+
+  const frames = spriteSheet.animations[playerAnim.name] || [0];
+  if (playerAnim.name === 'idle') {
+    playerAnim.frameCursor = 0;
+    playerAnim.timer = 0;
+    return;
+  }
+  const fps = playerAnim.name === 'run'
+    ? 16
+    : playerAnim.name === 'walk'
+      ? 10
+      : playerAnim.name === 'jump'
+        ? 12
+        : 6;
+  playerAnim.timer += dt;
+  const frameDuration = 1 / fps;
+  while (playerAnim.timer >= frameDuration) {
+    playerAnim.timer -= frameDuration;
+    if (playerAnim.name === 'jump') {
+      playerAnim.frameCursor = Math.min(playerAnim.frameCursor + 1, frames.length - 1);
+    } else {
+      playerAnim.frameCursor = (playerAnim.frameCursor + 1) % frames.length;
+    }
+  }
+}
+
+function getCurrentPlayerFrame() {
+  const fw = spriteSheet.frameWidth;
+  const fh = spriteSheet.frameHeight;
+  const img = spriteSheet.image;
+  const frames = spriteSheet.animations[playerAnim.name] || [0];
+  const frameListIndex = frames[Math.min(playerAnim.frameCursor, frames.length - 1)] ?? 0;
+
+  if (!state.intro) {
+    if (keys.up) {
+      const backIdx = spriteSheet.backFrameIndex >= 0 ? spriteSheet.backFrameIndex : 1;
+      const backFrame = spriteSheet.frames[backIdx];
+      if (backFrame) return backFrame;
+    }
+    if (keys.down) {
+      const frontIdx = spriteSheet.frontFrameIndex >= 0 ? spriteSheet.frontFrameIndex : 0;
+      const frontFrame = spriteSheet.frames[frontIdx];
+      if (frontFrame) return frontFrame;
+    }
+  }
+
+  if (playerAnim.name === 'jump' && frames.length >= 3) {
+    const vy = state.player.vy;
+    if (vy < -220) {
+      return spriteSheet.frames[frames[0]] || { x: frames[0] * fw, y: 0, w: fw, h: fh };
+    }
+    if (frames.length === 3) {
+      if (vy < 220) {
+        return spriteSheet.frames[frames[1]] || { x: frames[1] * fw, y: 0, w: fw, h: fh };
+      }
+      return spriteSheet.frames[frames[2]] || { x: frames[2] * fw, y: 0, w: fw, h: fh };
+    }
+
+    if (vy < -40) {
+      return spriteSheet.frames[frames[1]] || { x: frames[1] * fw, y: 0, w: fw, h: fh };
+    }
+    if (vy < 220) {
+      return spriteSheet.frames[frames[2]] || { x: frames[2] * fw, y: 0, w: fw, h: fh };
+    }
+    return spriteSheet.frames[frames[3]] || { x: frames[3] * fw, y: 0, w: fw, h: fh };
+  }
+
+  if (spriteSheet.frames[frameListIndex]) return spriteSheet.frames[frameListIndex];
+
+  const cols = Math.max(1, Math.floor((img.width || fw) / fw));
+  const sx = (frameListIndex % cols) * fw;
+  const sy = Math.floor(frameListIndex / cols) * fh;
+  return { x: sx, y: sy, w: fw, h: fh };
 }
 
 function roundedRectPath(x, y, w, h, r) {
@@ -498,6 +1133,12 @@ function updatePlayer(dt) {
   if (p.x < 0) p.x = 0;
   if (p.x + p.w > WORLD_WIDTH) p.x = WORLD_WIDTH - p.w;
 
+  // Face the actual movement direction and smoothly turn whole body.
+  if (Math.abs(p.vx) > 10) {
+    p.facing = p.vx < 0 ? -1 : 1;
+  }
+  p.facingVisual += (p.facing - p.facingVisual) * Math.min(1, dt * 16);
+
   if (p.y > HEIGHT + 200) {
     respawnOrLose();
   }
@@ -543,13 +1184,39 @@ function updateEnemies(dt) {
 
     if (!overlap(p, e)) continue;
 
-    const pBottom = p.y + p.h;
-    if (p.vy > 220 && pBottom - e.y < 24) {
-      e.dead = true;
-      p.vy = -420;
-      sfxCoin();
-    } else {
-      respawnOrLose();
+    const prevX = p.x - p.vx * dt;
+    const prevY = p.y - p.vy * dt;
+    const prevBottom = prevY + p.h;
+    const currBottom = p.y + p.h;
+
+    // Top landing: treat square enemies like climbable obstacles.
+    if (p.vy >= 0 && prevBottom <= e.y + 8 && currBottom >= e.y) {
+      p.y = e.y - p.h;
+      p.vy = 0;
+      p.onGround = true;
+      p.onWallSlide = false;
+      p.wallSlideDir = 0;
+      // Follow moving obstacle slightly so the player does not slip off instantly.
+      p.x += e.vx * dt;
+      continue;
+    }
+
+    // Side blocking.
+    if (prevX + p.w <= e.x + 4) {
+      p.x = e.x - p.w;
+      p.vx = Math.min(0, p.vx);
+      continue;
+    }
+    if (prevX >= e.x + e.w - 4) {
+      p.x = e.x + e.w;
+      p.vx = Math.max(0, p.vx);
+      continue;
+    }
+
+    // Bottom blocking when jumping into obstacle underside.
+    if (p.vy < 0 && prevY >= e.y + e.h - 4) {
+      p.y = e.y + e.h;
+      p.vy = 30;
     }
   }
 }
@@ -701,14 +1368,15 @@ function drawSky() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+  // Draw sun first so the title stays in front.
+  ctx.fillStyle = '#fff3a7';
+  ctx.beginPath();
+  ctx.arc(820, 90, 42, 0, Math.PI * 2);
+  ctx.fill();
+
   // Intro title watermark in gameplay background.
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.globalAlpha = 0.3;
-  ctx.fillStyle = 'rgba(18, 74, 120, 0.45)';
-  roundedRectPath(WIDTH / 2 - 290, 70, 580, 120, 24);
-  ctx.fill();
-
   ctx.globalAlpha = 1;
   ctx.shadowColor = 'rgba(14, 55, 96, 0.75)';
   ctx.shadowBlur = 8;
@@ -725,11 +1393,6 @@ function drawSky() {
   ctx.strokeText('ADVENTURE', WIDTH / 2, 164);
   ctx.fillText('ADVENTURE', WIDTH / 2, 164);
   ctx.restore();
-
-  ctx.fillStyle = '#fff3a7';
-  ctx.beginPath();
-  ctx.arc(820, 90, 42, 0, Math.PI * 2);
-  ctx.fill();
 
   for (const cloud of state.clouds) {
     const x = cloud.x - state.cameraX * 0.35;
@@ -882,8 +1545,9 @@ function drawCoins() {
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = '#ffb300';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#ff9f00';
+    ctx.lineWidth = 3.6;
+    ctx.lineJoin = 'round';
     ctx.stroke();
 
     // Inner sparkle
@@ -900,8 +1564,7 @@ function drawCoins() {
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillRect(x - 2, ry - outer - 8, 4, 8);
+    // Clean star silhouette: remove top stem/spark shard.
   }
 }
 
@@ -1019,30 +1682,88 @@ function drawGoal() {
 function drawPlayer() {
   const p = state.player;
   const x = p.x - state.cameraX;
-  const drawY = p.y + playerVisualOffsetY;
-  const drawH = p.h + playerVisualExtraHeight;
+  const bodyW = p.w;
+  const bodyH = p.h;
+  const drawH = (bodyH + playerVisualExtraHeight) * playerSpriteRenderScale;
+  const drawW = bodyW * playerSpriteRenderScale;
+  const anchorX = x + bodyW * 0.5;
+  const anchorY = p.y + bodyH + playerGroundSnapOffset;
+  const speedAbs = Math.abs(p.vx);
+  const moving = speedAbs > 18;
+  const running = speedAbs > 260 || state.boostTimer > 0 || state.speedItemTimer > 0;
+  const now = performance.now();
+  const lockFrontFacing =
+    (playerAnim.name === 'idle' && playerAnim.frameCursor === 0) ||
+    keys.down ||
+    keys.up;
+  const faceDirRaw = p.facingVisual ?? p.facing ?? 1;
+  // Keep intro/idle front frame unflipped so chest text stays readable.
+  const faceSign = lockFrontFacing ? 1 : (faceDirRaw < 0 ? 1 : -1);
+  // Keep a minimum width while turning so sprite does not disappear.
+  const faceTurnScale = lockFrontFacing ? 1 : (faceSign * Math.max(0.28, Math.abs(faceDirRaw)));
 
   if (state.shieldTimer > 0) {
     const aura = 0.2 + Math.sin(performance.now() * 0.01) * 0.08;
     ctx.save();
     ctx.globalAlpha = aura;
-    ctx.fillStyle = '#85ffd3';
+    ctx.fillStyle = '#73ffd0';
     ctx.beginPath();
-    ctx.ellipse(x + p.w / 2, drawY + drawH / 2, p.w * 0.62, drawH * 0.54, 0, 0, Math.PI * 2);
+    ctx.ellipse(anchorX, p.y + bodyH * 0.55, bodyW * 0.56, bodyH * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
-  if (playerImageReady) {
+  if (playerImageReady && spriteSheet.ready) {
     if (state.damageInvuln > 0 && Math.sin(performance.now() * 0.05) > 0.2) return;
     ctx.save();
-    if (p.facing < 0) {
-      ctx.translate(x + p.w, drawY);
-      ctx.scale(-1, 1);
-      ctx.drawImage(playerImage, 0, 0, p.w, drawH);
-    } else {
-      ctx.drawImage(playerImage, x, drawY, p.w, drawH);
-    }
+
+    const phase = now * (running ? 0.03 : 0.02);
+    const bob = p.onGround ? (moving ? Math.abs(Math.sin(phase)) * (running ? 5 : 3) : 0) : 2;
+    const tilt = p.onGround
+      ? clamp(p.vx / 450, -0.1, 0.1)
+      : clamp(p.vy / 1200, -0.1, 0.1) * 0.45;
+
+    // Contact shadow (aligned to sprite origin y=0.95).
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = '#102032';
+    ctx.beginPath();
+    ctx.ellipse(anchorX, anchorY - 2, bodyW * 0.42, 6.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    const frame = getCurrentPlayerFrame();
+    const fw = spriteSheet.frameWidth;
+    const fh = spriteSheet.frameHeight;
+    const sx = frame.x ?? 0;
+    const sy = frame.y ?? 0;
+    const sw = frame.w || fw;
+    const sh = frame.h || fh;
+
+    const cx = anchorX;
+    const footY = anchorY;
+    const stretchX = 1 + Math.min(0.03, Math.abs(p.vx) / 1800);
+    const stretchY = 1 - Math.min(0.04, Math.abs(p.vx) / 1400);
+    ctx.translate(cx, footY - bob);
+    ctx.rotate(tilt);
+    ctx.scale(faceTurnScale * stretchX, stretchY);
+
+    const renderImg = playerAnim.name === 'jump'
+      ? spriteSheet.image
+      : (spriteSheet.renderImage || spriteSheet.image);
+    const jumpTopPad = playerAnim.name === 'jump' ? 18 : 0;
+    ctx.drawImage(
+      renderImg,
+      sx,
+      sy,
+      sw,
+      sh,
+      -drawW * playerSpriteOriginX,
+      -drawH * playerSpriteOriginY - jumpTopPad,
+      drawW,
+      drawH + jumpTopPad
+    );
+
     ctx.restore();
     return;
   }
@@ -1096,8 +1817,13 @@ function drawIntro() {
   const px = WIDTH / 2 - pw / 2;
   const py = HEIGHT / 2 - ph / 2 - 14 + bob;
 
-  if (playerImageReady) {
-    ctx.drawImage(playerImage, px, py, pw, ph);
+  if (introCharacterReady) {
+    const fit = Math.min((pw * 0.95) / introCharacterImage.width, (ph * 0.98) / introCharacterImage.height);
+    const dw = introCharacterImage.width * fit;
+    const dh = introCharacterImage.height * fit;
+    const dx = WIDTH / 2 - dw / 2;
+    const dy = py + (ph - dh);
+    ctx.drawImage(introCharacterImage, dx, dy, dw, dh);
   } else {
     ctx.fillStyle = '#ffe56c';
     roundedRectPath(px + 44, py + 20, 92, 170, 46);
@@ -1153,6 +1879,7 @@ function update(dt) {
   }
 
   updatePlayer(dt);
+  updatePlayerAnimation(dt);
   updateHazards();
   updateEnemies(dt);
   updateCoins();
@@ -1186,7 +1913,16 @@ window.addEventListener('keydown', (e) => {
     pressRight(now);
   }
 
-  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+  if (e.code === 'ArrowUp') {
+    e.preventDefault();
+    keys.up = true;
+  }
+  if (e.code === 'ArrowDown') {
+    e.preventDefault();
+    keys.down = true;
+  }
+
+  if (e.code === 'Space' || e.code === 'KeyW') {
     e.preventDefault();
     pressJump(now);
   }
@@ -1198,7 +1934,9 @@ window.addEventListener('keyup', (e) => {
   if (state.intro) return;
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') releaseLeft();
   if (e.code === 'ArrowRight' || e.code === 'KeyD') releaseRight();
-  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') releaseJump();
+  if (e.code === 'ArrowUp') keys.up = false;
+  if (e.code === 'ArrowDown') keys.down = false;
+  if (e.code === 'Space' || e.code === 'KeyW') releaseJump();
 });
 
 canvas.addEventListener('pointerdown', () => {
@@ -1243,6 +1981,10 @@ window.addEventListener('pointerdown', unlockAudioByGesture, { passive: true });
 window.addEventListener('touchstart', unlockAudioByGesture, { passive: true });
 window.addEventListener('mousedown', unlockAudioByGesture, { passive: true });
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    keys.up = false;
+    keys.down = false;
+  }
   if (!document.hidden) {
     ensureAudioReady();
   }
