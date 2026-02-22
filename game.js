@@ -593,7 +593,7 @@ gameBgm.preload = 'auto';
 gameBgm.volume = 0.42;
 
 const clearBgm = new Audio('super.mp3');
-clearBgm.loop = true;
+clearBgm.loop = false;
 clearBgm.preload = 'auto';
 clearBgm.volume = 0.5;
 
