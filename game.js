@@ -11,7 +11,7 @@ const touchJumpBtn = document.getElementById('touch-jump');
 
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
-const WORLD_WIDTH = 3600;
+const WORLD_WIDTH = 4320;
 const FLOOR_Y = 470;
 const GRAVITY = 1900;
 
@@ -58,6 +58,20 @@ introCharacterImage.onload = () => {
   introCharacterReady = true;
 };
 introCharacterImage.src = 'character.png';
+
+const lavyImage = new Image();
+let lavyImageReady = false;
+lavyImage.onload = () => {
+  lavyImageReady = true;
+};
+lavyImage.src = 'lavy.png';
+
+const upPoseImage = new Image();
+let upPoseReady = false;
+upPoseImage.onload = () => {
+  upPoseReady = true;
+};
+upPoseImage.src = 'ch/character_exact_01.png';
 
 function buildVisibleSpriteSheetImage() {
   const src = spriteSheet.image;
@@ -569,19 +583,21 @@ const playerSpriteOriginX = 0.5;
 const playerSpriteOriginY = 0.95;
 const playerSpriteRenderScale = 1.2;
 const playerGroundSnapOffset = 24;
+const frontPoseExtraGroundOffset = 8;
 
 let audioCtx = null;
-let bgmEnabled = false;
-let bgmStep = 0;
-let bgmNextTime = 0;
 let audioUnlocked = false;
+const gameBgm = new Audio('clear.mp3');
+gameBgm.loop = true;
+gameBgm.preload = 'auto';
+gameBgm.volume = 0.42;
 
-const bgmPattern = [
-  392.0, 493.88, 587.33, 783.99,
-  659.25, 587.33, 523.25, 587.33,
-  440.0, 523.25, 659.25, 783.99,
-  659.25, 587.33, 523.25, 493.88,
-];
+const clearBgm = new Audio('super.mp3');
+clearBgm.loop = true;
+clearBgm.preload = 'auto';
+clearBgm.volume = 0.5;
+
+let activeBgm = 'none';
 
 function initAudio() {
   if (audioCtx) return;
@@ -590,28 +606,22 @@ function initAudio() {
   audioCtx = new Ctx();
 }
 
-function playBgmNote(freq, startTime, duration) {
-  if (!audioCtx || freq <= 0) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(freq, startTime);
-
-  gain.gain.setValueAtTime(0.0001, startTime);
-  gain.gain.linearRampToValueAtTime(0.026, startTime + 0.04);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start(startTime);
-  osc.stop(startTime + duration + 0.02);
+function stopAllBgm() {
+  gameBgm.pause();
+  clearBgm.pause();
 }
 
-function startBgm() {
-  if (!audioCtx || bgmEnabled || !audioUnlocked) return;
-  bgmEnabled = true;
-  bgmStep = 0;
-  bgmNextTime = audioCtx.currentTime + 0.08;
+function playBgmTrack(kind) {
+  if (!audioUnlocked) return;
+  const target = kind === 'clear' ? clearBgm : gameBgm;
+  const next = kind === 'clear' ? 'clear' : 'game';
+  if (activeBgm === next && !target.paused) return;
+
+  stopAllBgm();
+  target.currentTime = 0;
+  target.play().then(() => {
+    activeBgm = next;
+  }).catch(() => {});
 }
 
 function ensureAudioReady() {
@@ -620,7 +630,9 @@ function ensureAudioReady() {
 
   const start = () => {
     audioUnlocked = true;
-    startBgm();
+    if (!state.intro) {
+      playBgmTrack(state.win ? 'clear' : 'game');
+    }
   };
 
   if (audioCtx.state === 'suspended') {
@@ -637,18 +649,13 @@ function unlockAudioByGesture() {
     audioCtx.resume().catch(() => {});
   }
   audioUnlocked = true;
-  startBgm();
+  if (!state.intro) {
+    playBgmTrack(state.win ? 'clear' : 'game');
+  }
 }
 
 function scheduleBgm() {
-  if (!audioCtx || !bgmEnabled) return;
-  const lookAhead = 0.28;
-  while (bgmNextTime < audioCtx.currentTime + lookAhead) {
-    const freq = bgmPattern[bgmStep % bgmPattern.length];
-    playBgmNote(freq, bgmNextTime, 0.28);
-    bgmNextTime += 0.3;
-    bgmStep += 1;
-  }
+  // BGM now uses mp3 tracks; keep function for update loop compatibility.
 }
 
 function beep(freq, duration, type, volume) {
@@ -676,8 +683,8 @@ function sfxJump() {
 }
 
 function sfxCoin() {
-  beep(980, 0.07, 'square', 0.08);
-  beep(1320, 0.08, 'square', 0.05);
+  beep(980, 0.07, 'square', 0.13);
+  beep(1320, 0.08, 'square', 0.09);
 }
 
 function sfxHit() {
@@ -703,8 +710,8 @@ function sfxBoost() {
 }
 
 function sfxItem() {
-  beep(740, 0.08, 'triangle', 0.08);
-  setTimeout(() => beep(988, 0.11, 'triangle', 0.06), 70);
+  beep(740, 0.08, 'triangle', 0.13);
+  setTimeout(() => beep(988, 0.11, 'triangle', 0.1), 70);
 }
 
 const state = {
@@ -827,6 +834,22 @@ const items = [
   { x: 3330, y: 360, r: 14, type: 'boost', got: false },
 ];
 
+const LAND_GAP_SCALE = 1.2;
+if (LAND_GAP_SCALE !== 1) {
+  const sx = (x) => Math.round(x * LAND_GAP_SCALE);
+
+  for (const cloud of state.clouds) cloud.x = sx(cloud.x);
+  for (const plat of platforms) plat.x = sx(plat.x);
+  for (const coin of coins) coin.x = sx(coin.x);
+  for (const enemy of enemies) {
+    enemy.x = sx(enemy.x);
+    enemy.minX = sx(enemy.minX);
+    enemy.maxX = sx(enemy.maxX);
+  }
+  for (const item of items) item.x = sx(item.x);
+  goal.x = WORLD_WIDTH - 160;
+}
+
 function resetPlayerPosition() {
   state.player.x = 90;
   state.player.y = FLOOR_Y - state.player.h;
@@ -843,6 +866,8 @@ function resetPlayerPosition() {
 }
 
 function resetGame() {
+  activeBgm = 'none';
+  stopAllBgm();
   state.cameraX = 0;
   state.timeLeft = 120;
   state.timerTick = 0;
@@ -1282,6 +1307,7 @@ function updateGoal() {
     state.win = true;
     state.clearTimer = 0;
     state.flagDrop = 0;
+    playBgmTrack('clear');
     sfxWin();
     sfxFlagDrop();
   }
@@ -1748,9 +1774,41 @@ function drawPlayer() {
     ctx.rotate(tilt);
     ctx.scale(faceTurnScale * stretchX, stretchY);
 
-    const renderImg = playerAnim.name === 'jump'
-      ? spriteSheet.image
-      : (spriteSheet.renderImage || spriteSheet.image);
+    // Robust front/back pose render for neutral/ArrowDown/ArrowUp.
+    const noDirInput = !keys.left && !keys.right && !keys.up && !keys.down;
+    const neutralFrontPose = !state.intro && noDirInput && p.onGround && playerAnim.name === 'idle';
+    if ((!state.intro && keys.down && introCharacterReady) || (neutralFrontPose && introCharacterReady)) {
+      const fit = Math.min((drawW * 0.9) / introCharacterImage.width, (drawH * 0.94) / introCharacterImage.height);
+      const frontScale = 1.2;
+      const dw = introCharacterImage.width * fit * frontScale;
+      const dh = introCharacterImage.height * fit * frontScale;
+      ctx.drawImage(
+        introCharacterImage,
+        -dw * playerSpriteOriginX,
+        -dh + playerGroundSnapOffset + frontPoseExtraGroundOffset,
+        dw,
+        dh
+      );
+      ctx.restore();
+      return;
+    }
+    if (!state.intro && keys.up && upPoseReady) {
+      const fit = Math.min((drawW * 0.9) / upPoseImage.width, (drawH * 0.94) / upPoseImage.height);
+      const backScale = 1.3;
+      const dw = upPoseImage.width * fit * backScale;
+      const dh = upPoseImage.height * fit * backScale;
+      ctx.drawImage(
+        upPoseImage,
+        -dw * playerSpriteOriginX,
+        -dh * playerSpriteOriginY,
+        dw,
+        dh
+      );
+      ctx.restore();
+      return;
+    }
+
+    const renderImg = spriteSheet.image;
     const jumpTopPad = playerAnim.name === 'jump' ? 18 : 0;
     ctx.drawImage(
       renderImg,
@@ -1779,7 +1837,10 @@ function drawPlayer() {
 
 function drawOverlay() {
   if (!state.gameOver && !state.win) return;
-  if (state.win && state.clearTimer < 1.25) return;
+  if (state.win) {
+    drawWinHugScene();
+    return;
+  }
 
   ctx.fillStyle = 'rgba(14, 28, 46, 0.45)';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -1794,6 +1855,90 @@ function drawOverlay() {
     ? `コイン ${state.coins}枚を集めました!`
     : 'Rキーでリスタート';
   ctx.fillText(msg, WIDTH / 2, HEIGHT / 2 + 18);
+}
+
+function drawWinHugScene() {
+  const t = state.clearTimer;
+  const fade = clamp((t - 0.15) / 0.45, 0, 1);
+  const approach = clamp((t - 0.35) / 1.0, 0, 1);
+  const hug = clamp((t - 1.25) / 0.65, 0, 1);
+
+  ctx.fillStyle = `rgba(8, 24, 44, ${0.18 + fade * 0.58})`;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  const centerX = WIDTH * 0.5;
+  const baseY = HEIGHT * 0.73;
+  const charW = 150;
+  const charH = 210;
+  const startGap = 360;
+  const endGap = 112;
+  const gap = startGap + (endGap - startGap) * approach;
+  const bob = Math.sin(performance.now() * 0.008) * 4;
+  const hugSway = Math.sin(performance.now() * 0.012) * (hug * 6);
+
+  const leftX = centerX - gap * 0.5 - charW * 0.5 + hugSway;
+  const rightX = centerX + gap * 0.5 - charW * 0.5 - hugSway;
+  const charY = baseY - charH + bob;
+  const inwardTilt = 0.08 + hug * 0.06;
+
+  const drawFacing = (img, x, y, boxW, boxH, mirror, tilt) => {
+    if (!img) return;
+    const fit = Math.min(boxW / img.width, boxH / img.height);
+    const dw = img.width * fit;
+    const dh = img.height * fit;
+    const px = x + (boxW - dw) * 0.5;
+    const py = y + (boxH - dh);
+    const cx = x + boxW * 0.5;
+    const cy = y + boxH * 0.55;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(tilt);
+    ctx.scale(mirror ? -1 : 1, 1);
+    ctx.drawImage(img, px - cx, py - cy, dw, dh);
+    ctx.restore();
+  };
+
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = 'rgba(15, 36, 65, 0.35)';
+  ctx.beginPath();
+  ctx.ellipse(centerX, baseY + 4, 190 + hug * 35, 24 + hug * 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Keep chest text readable in clear scene.
+  const mirrorCharacter = false;
+  const mirrorLavy = false;
+  if (introCharacterReady) {
+    drawFacing(introCharacterImage, leftX, charY, charW, charH, mirrorCharacter, inwardTilt);
+  }
+  if (lavyImageReady) {
+    drawFacing(lavyImage, rightX, charY, charW, charH, mirrorLavy, -inwardTilt);
+  }
+
+  if (hug > 0.05) {
+    const heartY = charY - 22 - Math.sin(performance.now() * 0.01) * 4;
+    const heartScale = 0.82 + hug * 0.55;
+    ctx.save();
+    ctx.translate(centerX, heartY);
+    ctx.scale(heartScale, heartScale);
+    ctx.fillStyle = '#ff5e8a';
+    ctx.beginPath();
+    ctx.moveTo(0, 10);
+    ctx.bezierCurveTo(-26, -14, -58, 8, 0, 52);
+    ctx.bezierCurveTo(58, 8, 26, -14, 0, 10);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = `rgba(255,255,255,${0.75 + hug * 0.25})`;
+  ctx.font = 'bold 52px Trebuchet MS';
+  ctx.fillText('ステージクリア!', WIDTH * 0.5, HEIGHT * 0.24);
+
+  ctx.font = 'bold 24px Trebuchet MS';
+  ctx.fillStyle = '#e2f2ff';
+  ctx.fillText(`コイン ${state.coins}枚を集めました!`, WIDTH * 0.5, HEIGHT * 0.31);
 }
 
 function drawIntro() {
@@ -2004,6 +2149,7 @@ function startGameFromIntro() {
   if (!state.intro) return;
   state.intro = false;
   state.introSeen = true;
+  playBgmTrack('game');
 }
 
 resetGame();
