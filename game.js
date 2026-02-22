@@ -1210,6 +1210,44 @@ function updatePlayer(dt) {
     }
   }
 
+  // Extra adhesion pass for mobile/web jitter:
+  // if at least 2 out of 5 foot probes still have nearby support, keep grounded.
+  if (!p.onGround && wasOnGround && p.vy <= 320) {
+    const bottom = p.y + p.h;
+    const probes = [
+      p.x + 2,
+      p.x + p.w * 0.25,
+      p.x + p.w * 0.5,
+      p.x + p.w * 0.75,
+      p.x + p.w - 2,
+    ];
+    const adhesionTol = Math.max(14, Math.abs(p.vx) * dt + 8);
+    const supports = [];
+
+    for (const px of probes) {
+      let nearest = null;
+      for (const plat of platforms) {
+        if (px < plat.x + 2 || px > plat.x + plat.w - 2) continue;
+        const surfaceY = getPlatformSurfaceY(plat, px);
+        const dist = surfaceY - bottom;
+        if (dist < -10 || dist > adhesionTol) continue;
+        if (!nearest || Math.abs(dist) < Math.abs(nearest.dist)) {
+          nearest = { y: surfaceY, dist };
+        }
+      }
+      if (nearest) supports.push(nearest.y);
+    }
+
+    if (supports.length >= 2) {
+      const yAvg = supports.reduce((a, b) => a + b, 0) / supports.length;
+      p.y = yAvg - p.h;
+      p.vy = 0;
+      p.onGround = true;
+      p.onWallSlide = false;
+      p.wallSlideDir = 0;
+    }
+  }
+
   if (!p.onGround && p.vy > 0) {
     if (wallOnLeft && keys.left) {
       p.onWallSlide = true;
