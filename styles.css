@@ -52,6 +52,25 @@ body {
   font-weight: 700;
 }
 
+.difficulty-row {
+  margin: 4px 2px 10px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #2f5678;
+}
+
+.difficulty-row select {
+  border: 2px solid #4f7ca4;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d3f5e;
+  padding: 4px 8px;
+  font-weight: 700;
+}
+
 #game {
   width: 100%;
   display: block;
@@ -92,6 +111,18 @@ body {
   .help {
     font-size: 12px;
     margin-bottom: 88px;
+  }
+
+  .difficulty-row {
+    justify-content: center;
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+
+  .difficulty-row select {
+    font-size: 12px;
+    padding: 3px 8px;
   }
 
   .touch-controls {
