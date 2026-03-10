@@ -5,6 +5,7 @@ const stageEl = document.getElementById('stage');
 const coinEl = document.getElementById('coin');
 const timeEl = document.getElementById('time');
 const lifeEl = document.getElementById('life');
+const difficultySelectEl = document.getElementById('difficulty-select');
 const touchLeftBtn = document.getElementById('touch-left');
 const touchUpBtn = document.getElementById('touch-up');
 const touchRightBtn = document.getElementById('touch-right');
@@ -16,6 +17,31 @@ const HEIGHT = canvas.height;
 const WORLD_WIDTH = 4320;
 const FLOOR_Y = 470;
 const GRAVITY = 1900;
+const DEFAULT_TIME = 120;
+const DEFAULT_LIVES = 3;
+
+function getDifficultyPreset() {
+  if (state.difficulty === 'easy') {
+    return {
+      gravityScale: 0.9,
+      accelScale: 1.08,
+      maxSpeedScale: 1.06,
+      jumpScale: 1.1,
+      enemySpeedScale: 0.8,
+      time: 160,
+      lives: 5,
+    };
+  }
+  return {
+    gravityScale: 1,
+    accelScale: 1,
+    maxSpeedScale: 1,
+    jumpScale: 1,
+    enemySpeedScale: 1,
+    time: DEFAULT_TIME,
+    lives: DEFAULT_LIVES,
+  };
+}
 
 const keys = {
   left: false,
@@ -724,10 +750,11 @@ function sfxItem() {
 
 const state = {
   cameraX: 0,
-  timeLeft: 120,
+  timeLeft: DEFAULT_TIME,
   timerTick: 0,
   coins: 0,
-  lives: 3,
+  lives: DEFAULT_LIVES,
+  difficulty: 'normal',
   introSeen: false,
   intro: true,
   introTime: 0,
@@ -820,10 +847,10 @@ const coins = [
 ];
 
 const enemies = [
-  { x: 900, y: FLOOR_Y - 38, w: 42, h: 38, vx: 70, minX: 820, maxX: 980, dead: false },
-  { x: 1860, y: FLOOR_Y - 118, w: 42, h: 38, vx: 65, minX: 1740, maxX: 1940, dead: false },
-  { x: 2570, y: FLOOR_Y - 138, w: 42, h: 38, vx: 75, minX: 2430, maxX: 2670, dead: false },
-  { x: 3270, y: FLOOR_Y - 38, w: 42, h: 38, vx: 90, minX: 3180, maxX: 3420, dead: false },
+  { x: 900, y: FLOOR_Y - 38, w: 42, h: 38, vx: 70, baseVx: 70, minX: 820, maxX: 980, dead: false },
+  { x: 1860, y: FLOOR_Y - 118, w: 42, h: 38, vx: 65, baseVx: 65, minX: 1740, maxX: 1940, dead: false },
+  { x: 2570, y: FLOOR_Y - 138, w: 42, h: 38, vx: 75, baseVx: 75, minX: 2430, maxX: 2670, dead: false },
+  { x: 3270, y: FLOOR_Y - 38, w: 42, h: 38, vx: 90, baseVx: 90, minX: 3180, maxX: 3420, dead: false },
 ];
 
 const goal = {
@@ -876,13 +903,14 @@ function resetPlayerPosition() {
 }
 
 function resetGame() {
+  const preset = getDifficultyPreset();
   activeBgm = 'none';
   stopAllBgm();
   state.cameraX = 0;
-  state.timeLeft = 120;
+  state.timeLeft = preset.time;
   state.timerTick = 0;
   state.coins = 0;
-  state.lives = 3;
+  state.lives = preset.lives;
   state.intro = !state.introSeen;
   state.introTime = 0;
   state.gameOver = false;
@@ -898,7 +926,10 @@ function resetGame() {
   state.damageInvuln = 0;
 
   for (const coin of coins) coin.got = false;
-  for (const enemy of enemies) enemy.dead = false;
+  for (const enemy of enemies) {
+    enemy.dead = false;
+    enemy.vx = (enemy.baseVx || enemy.vx) * preset.enemySpeedScale;
+  }
   for (const item of items) item.got = false;
 
   setPlayerAnimation('idle');
@@ -1067,11 +1098,12 @@ function respawnOrLose() {
 function updatePlayer(dt) {
   const p = state.player;
   const wasOnGround = p.onGround;
+  const preset = getDifficultyPreset();
 
   const speedItem = state.speedItemTimer > 0;
   const boosting = state.boostTimer > 0;
-  const accel = boosting ? 2600 : speedItem ? 2050 : 1500;
-  const maxSpeed = boosting ? 520 : speedItem ? 420 : 300;
+  const accel = (boosting ? 2600 : speedItem ? 2050 : 1500) * preset.accelScale;
+  const maxSpeed = (boosting ? 520 : speedItem ? 420 : 300) * preset.maxSpeedScale;
   const friction = 1900;
 
   if (boosting) {
@@ -1098,7 +1130,7 @@ function updatePlayer(dt) {
 
   p.vx = clamp(p.vx, -maxSpeed, maxSpeed);
 
-  p.vy += GRAVITY * dt;
+  p.vy += GRAVITY * preset.gravityScale * dt;
   if (p.vy > 1200) p.vy = 1200;
 
   p.x += p.vx * dt;
@@ -1282,18 +1314,20 @@ function handleJump() {
 function handleJumpWithBoost(boosted) {
   if (state.gameOver || state.win) return;
   const p = state.player;
+  const preset = getDifficultyPreset();
+  const jumpScale = preset.jumpScale;
   const wallJump = !p.onGround && p.onWallSlide && p.wallSlideDir !== 0;
   if (!p.onGround && !wallJump) return;
 
   if (wallJump) {
     const jumpDir = p.wallSlideDir === 1 ? -1 : 1;
-    p.vy = boosted ? -980 : -840;
-    p.vx = (boosted ? 470 : 400) * jumpDir;
+    p.vy = (boosted ? -980 : -840) * jumpScale;
+    p.vx = (boosted ? 470 : 400) * jumpDir * jumpScale;
     p.facing = jumpDir;
     p.onWallSlide = false;
     p.wallSlideDir = 0;
   } else {
-    p.vy = boosted ? -930 : -760;
+    p.vy = (boosted ? -930 : -760) * jumpScale;
     p.onGround = false;
   }
 
@@ -2245,6 +2279,16 @@ if (touchRestartBtn) {
     if (state.intro) startGameFromIntro();
   };
   touchRestartBtn.addEventListener('pointerdown', restart, { passive: false });
+}
+
+if (difficultySelectEl) {
+  difficultySelectEl.value = state.difficulty;
+  difficultySelectEl.addEventListener('change', () => {
+    const next = difficultySelectEl.value === 'easy' ? 'easy' : 'normal';
+    if (state.difficulty === next) return;
+    state.difficulty = next;
+    resetGame();
+  });
 }
 
 // Fallback unlock for browsers that require a direct page interaction.
