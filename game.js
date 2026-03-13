@@ -725,6 +725,11 @@ function sfxFail() {
   setTimeout(() => beep(280, 0.18, 'triangle', 0.2), 190);
 }
 
+function sfxSlip() {
+  beep(430, 0.05, 'square', 0.11);
+  setTimeout(() => beep(300, 0.07, 'triangle', 0.1), 45);
+}
+
 function sfxWin() {
   beep(760, 0.12, 'triangle', 0.07);
   setTimeout(() => beep(1020, 0.12, 'triangle', 0.07), 120);
@@ -785,6 +790,10 @@ const state = {
     onWallSlide: false,
     wallSlideDir: 0,
     onMovingBlock: false,
+    edgeHangTimer: 0,
+    edgeHangSide: 0,
+    edgeSlipFx: 0,
+    edgeSlipLock: 0,
     facing: 1,
     facingVisual: 1,
   },
@@ -896,6 +905,10 @@ function resetPlayerPosition() {
   state.player.onWallSlide = false;
   state.player.wallSlideDir = 0;
   state.player.onMovingBlock = false;
+  state.player.edgeHangTimer = 0;
+  state.player.edgeHangSide = 0;
+  state.player.edgeSlipFx = 0;
+  state.player.edgeSlipLock = 0;
   state.player.facing = 1;
   state.player.facingVisual = 1;
   state.boostTimer = 0;
@@ -1102,6 +1115,8 @@ function respawnOrLose() {
 function updatePlayer(dt) {
   const p = state.player;
   const wasOnGround = p.onGround;
+  p.edgeSlipFx = Math.max(0, p.edgeSlipFx - dt);
+  p.edgeSlipLock = Math.max(0, p.edgeSlipLock - dt);
   const preset = getDifficultyPreset();
 
   const speedItem = state.speedItemTimer > 0;
@@ -1192,7 +1207,7 @@ function updatePlayer(dt) {
 
   // Mobile-safe landing snap:
   // if collision pass misses a frame, snap feet to the nearest ridge surface.
-  if (!p.onGround && p.vy >= 0) {
+  if (!p.onGround && p.vy >= 0 && p.edgeSlipLock <= 0) {
     const footX = p.x + p.w * 0.5;
     const bottom = p.y + p.h;
     const landingTol = Math.max(10, Math.abs(p.vy) * dt + 4);
@@ -1220,7 +1235,7 @@ function updatePlayer(dt) {
   // Ground stickiness for ridge terrain:
   // if the player was grounded in the previous frame, keep them attached
   // to nearby slope samples instead of slipping off due to tiny frame gaps.
-  if (!p.onGround && wasOnGround && p.vy <= 260) {
+  if (!p.onGround && wasOnGround && p.vy <= 260 && p.edgeSlipLock <= 0) {
     const bottom = p.y + p.h;
     const probes = [p.x + p.w * 0.25, p.x + p.w * 0.5, p.x + p.w * 0.75];
     const stickTol = Math.max(12, Math.abs(p.vx) * dt + 6);
@@ -1248,7 +1263,7 @@ function updatePlayer(dt) {
 
   // Extra adhesion pass for mobile/web jitter:
   // if at least 2 out of 5 foot probes still have nearby support, keep grounded.
-  if (!p.onGround && wasOnGround && p.vy <= 320) {
+  if (!p.onGround && wasOnGround && p.vy <= 320 && p.edgeSlipLock <= 0) {
     const bottom = p.y + p.h;
     const probes = [
       p.x + 2,
@@ -1295,6 +1310,53 @@ function updatePlayer(dt) {
   }
   if (p.onWallSlide) {
     p.vy = Math.min(p.vy, 210);
+  }
+
+  // Edge hang -> slip-off effect on floating ridge ends.
+  if (p.onGround && !p.onMovingBlock && p.edgeSlipLock <= 0) {
+    let support = null;
+    let supportWidth = 0;
+    const bottom = p.y + p.h;
+    for (const plat of platforms) {
+      const overlapW = Math.min(p.x + p.w, plat.x + plat.w) - Math.max(p.x, plat.x);
+      if (overlapW <= 0) continue;
+      const probeX = clamp(p.x + p.w * 0.5, plat.x + 2, plat.x + plat.w - 2);
+      const surfaceY = getPlatformSurfaceY(plat, probeX);
+      if (Math.abs(surfaceY - bottom) > 9) continue;
+      if (!support || overlapW > supportWidth) {
+        support = plat;
+        supportWidth = overlapW;
+      }
+    }
+
+    if (support) {
+      const hangThreshold = p.w * 0.34;
+      if (supportWidth < hangThreshold) {
+        const centerX = p.x + p.w * 0.5;
+        const supportCenter = support.x + support.w * 0.5;
+        p.edgeHangSide = centerX >= supportCenter ? 1 : -1;
+        p.edgeHangTimer += dt;
+      } else {
+        p.edgeHangTimer = 0;
+        p.edgeHangSide = 0;
+      }
+    } else {
+      p.edgeHangTimer = 0;
+      p.edgeHangSide = 0;
+    }
+
+    if (p.edgeHangTimer > 0.15) {
+      p.onGround = false;
+      p.vy = Math.max(p.vy, 180);
+      p.vx *= 0.86;
+      p.edgeSlipFx = 0.18;
+      p.edgeSlipLock = 0.2;
+      p.edgeHangTimer = 0;
+      sfxSlip();
+    }
+  } else if (!p.onGround) {
+    p.edgeHangTimer = 0;
+    p.edgeHangSide = 0;
   }
 
   if (p.x < 0) p.x = 0;
@@ -1896,9 +1958,13 @@ function drawPlayer() {
 
     const phase = now * (running ? 0.03 : 0.02);
     const bob = p.onGround ? (moving ? Math.abs(Math.sin(phase)) * (running ? 5 : 3) : 0) : 2;
-    const tilt = p.onGround
+    let tilt = p.onGround
       ? clamp(p.vx / 450, -0.1, 0.1)
       : clamp(p.vy / 1200, -0.1, 0.1) * 0.45;
+    if (p.edgeSlipFx > 0) {
+      const slipT = p.edgeSlipFx / 0.18;
+      tilt += (p.edgeHangSide || (p.facing >= 0 ? 1 : -1)) * 0.22 * slipT;
+    }
 
     // Contact shadow (aligned to sprite origin y=0.95).
     ctx.save();
