@@ -1330,7 +1330,7 @@ function updatePlayer(dt) {
     }
 
     if (support) {
-      const hangThreshold = p.w * 0.34;
+      const hangThreshold = p.w * 0.56;
       if (supportWidth < hangThreshold) {
         const centerX = p.x + p.w * 0.5;
         const supportCenter = support.x + support.w * 0.5;
@@ -1345,7 +1345,7 @@ function updatePlayer(dt) {
       p.edgeHangSide = 0;
     }
 
-    if (p.edgeHangTimer > 0.15) {
+    if (p.edgeHangTimer > 0.09) {
       p.onGround = false;
       p.vy = Math.max(p.vy, 180);
       p.vx *= 0.86;
