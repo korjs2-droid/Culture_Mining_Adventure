@@ -772,6 +772,8 @@ const state = {
   speedItemTimer: 0,
   shieldTimer: 0,
   damageInvuln: 0,
+  failFxTimer: 0,
+  failTextTimer: 0,
   player: {
     x: 90,
     y: FLOOR_Y - 108,
@@ -1086,6 +1088,8 @@ function respawnOrLose() {
     return;
   }
   state.lives -= 1;
+  state.failFxTimer = 0.22;
+  state.failTextTimer = 0.7;
   sfxFail();
   if (state.lives <= 0) {
     state.gameOver = true;
@@ -2144,6 +2148,13 @@ function render() {
     drawIntro();
     return;
   }
+  const shakePower = state.failFxTimer > 0 ? (state.failFxTimer / 0.22) * 6 : 0;
+  ctx.save();
+  if (shakePower > 0) {
+    const sx = (Math.random() * 2 - 1) * shakePower;
+    const sy = (Math.random() * 2 - 1) * shakePower * 0.6;
+    ctx.translate(sx, sy);
+  }
   drawSky();
   drawHills();
   for (const plat of platforms) drawPlatform(plat);
@@ -2153,6 +2164,25 @@ function render() {
   for (const enemy of enemies) drawEnemy(enemy);
   drawGoal();
   drawPlayer();
+  ctx.restore();
+
+  if (state.failFxTimer > 0) {
+    const a = Math.min(0.28, state.failFxTimer / 0.22 * 0.28);
+    ctx.fillStyle = `rgba(255, 58, 58, ${a})`;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  }
+
+  if (state.failTextTimer > 0 && !state.gameOver && !state.win) {
+    const alpha = Math.min(1, state.failTextTimer / 0.7);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 44px Trebuchet MS';
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.strokeStyle = `rgba(120,0,0,${alpha})`;
+    ctx.lineWidth = 5;
+    ctx.strokeText('TRY AGAIN!', WIDTH / 2, HEIGHT * 0.45);
+    ctx.fillText('TRY AGAIN!', WIDTH / 2, HEIGHT * 0.45);
+  }
+
   drawOverlay();
 }
 
@@ -2183,6 +2213,8 @@ function update(dt) {
   state.speedItemTimer = Math.max(0, state.speedItemTimer - dt);
   state.shieldTimer = Math.max(0, state.shieldTimer - dt);
   state.damageInvuln = Math.max(0, state.damageInvuln - dt);
+  state.failFxTimer = Math.max(0, state.failFxTimer - dt);
+  state.failTextTimer = Math.max(0, state.failTextTimer - dt);
   updateCamera();
 }
 
