@@ -794,6 +794,7 @@ const state = {
     edgeHangSide: 0,
     edgeSlipFx: 0,
     edgeSlipLock: 0,
+    edgeSlipDir: 0,
     facing: 1,
     facingVisual: 1,
   },
@@ -909,6 +910,7 @@ function resetPlayerPosition() {
   state.player.edgeHangSide = 0;
   state.player.edgeSlipFx = 0;
   state.player.edgeSlipLock = 0;
+  state.player.edgeSlipDir = 0;
   state.player.facing = 1;
   state.player.facingVisual = 1;
   state.boostTimer = 0;
@@ -1133,6 +1135,11 @@ function updatePlayer(dt) {
   }
   state.boostCooldown = Math.max(0, state.boostCooldown - dt);
 
+  if (p.edgeSlipLock > 0 && p.edgeSlipDir !== 0) {
+    p.vx += p.edgeSlipDir * 920 * dt;
+    if (Math.abs(p.vx) < 190) p.vx = p.edgeSlipDir * 190;
+  }
+
   if (keys.left) {
     p.vx -= accel * dt;
     p.facing = -1;
@@ -1348,9 +1355,11 @@ function updatePlayer(dt) {
     if (p.edgeHangTimer > 0.09) {
       p.onGround = false;
       p.vy = Math.max(p.vy, 180);
-      p.vx *= 0.86;
+      p.edgeSlipDir = p.edgeHangSide || (p.vx >= 0 ? 1 : -1);
+      p.vx = p.edgeSlipDir * Math.max(210, Math.abs(p.vx) * 0.9);
+      p.x += p.edgeSlipDir * 8;
       p.edgeSlipFx = 0.18;
-      p.edgeSlipLock = 0.2;
+      p.edgeSlipLock = 0.35;
       p.edgeHangTimer = 0;
       sfxSlip();
     }
@@ -1361,6 +1370,9 @@ function updatePlayer(dt) {
 
   if (p.x < 0) p.x = 0;
   if (p.x + p.w > WORLD_WIDTH) p.x = WORLD_WIDTH - p.w;
+  if (p.x <= 0 || p.x + p.w >= WORLD_WIDTH) {
+    p.edgeSlipDir = 0;
+  }
 
   // Face the actual movement direction and smoothly turn whole body.
   if (Math.abs(p.vx) > 10) {
