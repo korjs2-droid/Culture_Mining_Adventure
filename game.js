@@ -867,9 +867,9 @@ const enemies = [
 
 const goal = {
   x: WORLD_WIDTH - 160,
-  y: FLOOR_Y - 190,
+  y: FLOOR_Y - 280,
   w: 18,
-  h: 190,
+  h: 280,
 };
 
 const spikes = [];
