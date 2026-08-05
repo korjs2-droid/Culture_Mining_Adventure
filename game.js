@@ -6,6 +6,7 @@ const coinEl = document.getElementById('coin');
 const timeEl = document.getElementById('time');
 const lifeEl = document.getElementById('life');
 const difficultySelectEl = document.getElementById('difficulty-select');
+const universitySelectEl = document.getElementById('university-select');
 const touchLeftBtn = document.getElementById('touch-left');
 const touchUpBtn = document.getElementById('touch-up');
 const touchRightBtn = document.getElementById('touch-right');
@@ -93,6 +94,20 @@ lavyImage.onload = () => {
   lavyImageReady = true;
 };
 lavyImage.src = 'lavy.png';
+
+const kobeImage = new Image();
+let kobeImageReady = false;
+kobeImage.onload = () => {
+  kobeImageReady = true;
+};
+kobeImage.src = 'kobe.PNG';
+
+const beeImage = new Image();
+let beeImageReady = false;
+beeImage.onload = () => {
+  beeImageReady = true;
+};
+beeImage.src = 'bee.PNG';
 
 const upPoseImage = new Image();
 let upPoseReady = false;
@@ -760,6 +775,7 @@ const state = {
   coins: 0,
   lives: DEFAULT_LIVES,
   difficulty: 'normal',
+  university: 'a',
   introSeen: false,
   intro: true,
   introTime: 0,
@@ -896,6 +912,36 @@ if (LAND_GAP_SCALE !== 1) {
   }
   for (const item of items) item.x = sx(item.x);
   goal.x = WORLD_WIDTH - 160;
+}
+
+function getUniversityCompanion() {
+  if (state.university === 'b') {
+    return {
+      image: kobeImage,
+      ready: kobeImageReady,
+      label: 'Kobe',
+      scale: 1,
+      yOffset: -38,
+    };
+  }
+
+  if (state.university === 'c') {
+    return {
+      image: beeImage,
+      ready: beeImageReady,
+      label: 'Osaka',
+      scale: 0.6,
+      yOffset: -37,
+    };
+  }
+
+  return {
+    image: lavyImage,
+    ready: lavyImageReady,
+    label: 'Mukogawa',
+    scale: 1,
+    yOffset: 0,
+  };
 }
 
 function resetPlayerPosition() {
@@ -2111,13 +2157,13 @@ function drawWinHugScene() {
   const charY = baseY - charH + bob;
   const inwardTilt = 0.08 + hug * 0.06;
 
-  const drawFacing = (img, x, y, boxW, boxH, mirror, tilt) => {
+  const drawFacing = (img, x, y, boxW, boxH, mirror, tilt, scale = 1, yOffset = 0) => {
     if (!img) return;
     const fit = Math.min(boxW / img.width, boxH / img.height);
-    const dw = img.width * fit;
-    const dh = img.height * fit;
+    const dw = img.width * fit * scale;
+    const dh = img.height * fit * scale;
     const px = x + (boxW - dw) * 0.5;
-    const py = y + (boxH - dh);
+    const py = y + (boxH - dh) + yOffset;
     const cx = x + boxW * 0.5;
     const cy = y + boxH * 0.55;
     ctx.save();
@@ -2138,12 +2184,23 @@ function drawWinHugScene() {
 
   // Keep chest text readable in clear scene.
   const mirrorCharacter = false;
-  const mirrorLavy = false;
+  const mirrorCompanion = false;
   if (introCharacterReady) {
     drawFacing(introCharacterImage, leftX, charY, charW, charH, mirrorCharacter, inwardTilt);
   }
-  if (lavyImageReady) {
-    drawFacing(lavyImage, rightX, charY, charW, charH, mirrorLavy, -inwardTilt);
+  const companion = getUniversityCompanion();
+  if (companion.ready) {
+    drawFacing(
+      companion.image,
+      rightX,
+      charY,
+      charW,
+      charH,
+      mirrorCompanion,
+      -inwardTilt,
+      companion.scale,
+      companion.yOffset,
+    );
   }
 
   if (hug > 0.05) {
@@ -2219,6 +2276,10 @@ function drawIntro() {
   ctx.font = 'bold 24px Trebuchet MS';
   ctx.fillStyle = '#dff3ff';
   ctx.fillText('Space / Enter でスタート', WIDTH / 2, HEIGHT - 68);
+  const companion = getUniversityCompanion();
+  ctx.font = 'bold 18px Trebuchet MS';
+  ctx.fillStyle = '#b8dcff';
+  ctx.fillText(`大学選択: ${companion.label}`, WIDTH / 2, HEIGHT - 38);
 }
 
 function render() {
@@ -2398,6 +2459,16 @@ if (difficultySelectEl) {
     if (state.difficulty === next) return;
     state.difficulty = next;
     resetGame();
+  });
+}
+
+if (universitySelectEl) {
+  universitySelectEl.value = state.university;
+  universitySelectEl.addEventListener('change', () => {
+    const next = universitySelectEl.value === 'b' || universitySelectEl.value === 'c'
+      ? universitySelectEl.value
+      : 'a';
+    state.university = next;
   });
 }
 
