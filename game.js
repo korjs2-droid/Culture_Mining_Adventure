@@ -1734,17 +1734,21 @@ function drawSky() {
   ctx.save();
   ctx.textAlign = 'center';
   ctx.globalAlpha = 1;
-  ctx.shadowColor = 'rgba(14, 55, 96, 0.75)';
-  ctx.shadowBlur = 8;
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = 'rgba(18, 74, 120, 0.95)';
-  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(14, 55, 96, 0.9)';
+  ctx.shadowBlur = 12;
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(10, 48, 90, 1)';
+  const titleGrad = ctx.createLinearGradient(0, 70, 0, 148);
+  titleGrad.addColorStop(0, '#fffbe6');
+  titleGrad.addColorStop(0.5, '#ffffff');
+  titleGrad.addColorStop(1, '#ffe36a');
+  ctx.fillStyle = titleGrad;
   ctx.font = 'bold 64px Trebuchet MS';
   ctx.strokeText('Culture Mining', WIDTH / 2, 120);
   ctx.fillText('Culture Mining', WIDTH / 2, 120);
-  ctx.shadowBlur = 6;
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(18, 74, 120, 0.9)';
+  ctx.shadowBlur = 8;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(10, 48, 90, 0.95)';
   ctx.font = 'bold 32px Trebuchet MS';
   ctx.strokeText('ADVENTURE', WIDTH / 2, 164);
   ctx.fillText('ADVENTURE', WIDTH / 2, 164);
@@ -2355,11 +2359,21 @@ function drawIntro() {
   }
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#ffffff';
+  const introTitleGrad = ctx.createLinearGradient(0, 88, 0, 132);
+  introTitleGrad.addColorStop(0, '#fffbe6');
+  introTitleGrad.addColorStop(0.55, '#ffffff');
+  introTitleGrad.addColorStop(1, '#ffe36a');
+  ctx.fillStyle = introTitleGrad;
+  ctx.shadowColor = 'rgba(14, 55, 96, 0.9)';
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = 'rgba(10, 48, 90, 1)';
+  ctx.lineWidth = 5;
   ctx.font = 'bold 56px Trebuchet MS';
+  ctx.strokeText('Culture Mining', WIDTH / 2, 122);
   ctx.fillText('Culture Mining', WIDTH / 2, 122);
   ctx.font = 'bold 30px Trebuchet MS';
-  ctx.fillStyle = '#ffe26a';
+  ctx.shadowBlur = 7;
+  ctx.fillStyle = '#fff08a';
   ctx.fillText('ADVENTURE', WIDTH / 2, 162);
 
   ctx.font = 'bold 24px Trebuchet MS';
