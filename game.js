@@ -56,6 +56,7 @@ const BOOST_DURATION = 0.35;
 const BOOST_COOLDOWN = 0.45;
 const JUMP_BOOST_WINDOW_MS = 260;
 const JUMP_BOOST_COOLDOWN = 0.35;
+const GAMEPAD_DEADZONE = 0.35;
 
 const spriteSheet = {
   image: new Image(),
@@ -1622,6 +1623,94 @@ function releaseUp() {
   keys.up = false;
 }
 
+const gamepadState = {
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+  jump: false,
+};
+
+function getPrimaryGamepad() {
+  if (!navigator.getGamepads) return null;
+  const pads = navigator.getGamepads();
+  for (const pad of pads) {
+    if (pad && pad.connected) return pad;
+  }
+  return null;
+}
+
+function buttonPressed(button) {
+  return !!button && (button.pressed || button.value > 0.5);
+}
+
+function axisDirection(value) {
+  if (value < -GAMEPAD_DEADZONE) return -1;
+  if (value > GAMEPAD_DEADZONE) return 1;
+  return 0;
+}
+
+function releaseAllGamepadInputs() {
+  if (gamepadState.left) releaseLeft();
+  if (gamepadState.right) releaseRight();
+  if (gamepadState.jump) releaseJump();
+  if (gamepadState.up) releaseUp();
+  if (gamepadState.down) keys.down = false;
+  gamepadState.left = false;
+  gamepadState.right = false;
+  gamepadState.jump = false;
+  gamepadState.up = false;
+  gamepadState.down = false;
+}
+
+function pollGamepadInput(now = performance.now()) {
+  const pad = getPrimaryGamepad();
+  if (!pad) {
+    releaseAllGamepadInputs();
+    return;
+  }
+
+  const buttons = pad.buttons || [];
+  const axes = pad.axes || [];
+  const axisX = axisDirection(axes[0] || 0);
+  const axisY = axisDirection(axes[1] || 0);
+  const left = buttonPressed(buttons[14]) || axisX < 0;
+  const right = buttonPressed(buttons[15]) || axisX > 0;
+  const up = buttonPressed(buttons[12]) || axisY < 0;
+  const down = buttonPressed(buttons[13]) || axisY > 0;
+  const jump = buttonPressed(buttons[0]);
+  const start = buttonPressed(buttons[9]) || buttonPressed(buttons[8]);
+
+  if (state.intro) {
+    if (start || jump) {
+      startGameFromIntro();
+    }
+    releaseAllGamepadInputs();
+    return;
+  }
+
+  if ((state.gameOver || state.win) && start) {
+    resetGame();
+    releaseAllGamepadInputs();
+    return;
+  }
+
+  if (left && !gamepadState.left) pressLeft(now);
+  if (!left && gamepadState.left) releaseLeft();
+  if (right && !gamepadState.right) pressRight(now);
+  if (!right && gamepadState.right) releaseRight();
+  if (jump && !gamepadState.jump) pressJump(now);
+  if (!jump && gamepadState.jump) releaseJump();
+  if (up !== gamepadState.up) keys.up = up;
+  if (down !== gamepadState.down) keys.down = down;
+
+  gamepadState.left = left;
+  gamepadState.right = right;
+  gamepadState.jump = jump;
+  gamepadState.up = up;
+  gamepadState.down = down;
+}
+
 function updateCamera() {
   const target = state.player.x - WIDTH * 0.35;
   state.cameraX = clamp(target, 0, WORLD_WIDTH - WIDTH);
@@ -2327,6 +2416,7 @@ function render() {
 
 function update(dt) {
   scheduleBgm();
+  pollGamepadInput();
   if (state.intro) {
     state.introTime += dt;
     return;
