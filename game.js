@@ -1740,8 +1740,8 @@ function drawSky() {
   ctx.strokeStyle = 'rgba(18, 74, 120, 0.95)';
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 64px Trebuchet MS';
-  ctx.strokeText('カルチャーマイニング', WIDTH / 2, 120);
-  ctx.fillText('カルチャーマイニング', WIDTH / 2, 120);
+  ctx.strokeText('Culture Mining', WIDTH / 2, 120);
+  ctx.fillText('Culture Mining', WIDTH / 2, 120);
   ctx.shadowBlur = 6;
   ctx.lineWidth = 3;
   ctx.strokeStyle = 'rgba(18, 74, 120, 0.9)';
@@ -2357,7 +2357,7 @@ function drawIntro() {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 56px Trebuchet MS';
-  ctx.fillText('カルチャーマイニング', WIDTH / 2, 122);
+  ctx.fillText('Culture Mining', WIDTH / 2, 122);
   ctx.font = 'bold 30px Trebuchet MS';
   ctx.fillStyle = '#ffe26a';
   ctx.fillText('ADVENTURE', WIDTH / 2, 162);
