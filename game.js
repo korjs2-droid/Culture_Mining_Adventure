@@ -110,6 +110,13 @@ beeImage.onload = () => {
 };
 beeImage.src = 'bee.PNG';
 
+const ufvImage = new Image();
+let ufvImageReady = false;
+ufvImage.onload = () => {
+  ufvImageReady = true;
+};
+ufvImage.src = 'ufv.png';
+
 const upPoseImage = new Image();
 let upPoseReady = false;
 upPoseImage.onload = () => {
@@ -933,6 +940,16 @@ function getUniversityCompanion() {
       label: 'Osaka',
       scale: 0.6,
       yOffset: -37,
+    };
+  }
+
+  if (state.university === 'd') {
+    return {
+      image: ufvImage,
+      ready: ufvImageReady,
+      label: 'UFV',
+      scale: 1,
+      yOffset: 0,
     };
   }
 
@@ -2569,7 +2586,7 @@ if (difficultySelectEl) {
 if (universitySelectEl) {
   universitySelectEl.value = state.university;
   universitySelectEl.addEventListener('change', () => {
-    const next = universitySelectEl.value === 'b' || universitySelectEl.value === 'c'
+    const next = universitySelectEl.value === 'b' || universitySelectEl.value === 'c' || universitySelectEl.value === 'd'
       ? universitySelectEl.value
       : 'a';
     state.university = next;
