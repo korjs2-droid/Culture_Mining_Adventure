@@ -949,7 +949,7 @@ function getUniversityCompanion() {
       ready: ufvImageReady,
       label: 'UFV',
       scale: 1,
-      yOffset: 0,
+      yOffset: -37,
     };
   }
 
