@@ -117,6 +117,13 @@ ufvImage.onload = () => {
 };
 ufvImage.src = 'ufv.png';
 
+const twuImage = new Image();
+let twuImageReady = false;
+twuImage.onload = () => {
+  twuImageReady = true;
+};
+twuImage.src = 'twu_mascot.png?v=2';
+
 const upPoseImage = new Image();
 let upPoseReady = false;
 upPoseImage.onload = () => {
@@ -950,6 +957,16 @@ function getUniversityCompanion() {
       label: 'UFV',
       scale: 1,
       yOffset: -37,
+    };
+  }
+
+  if (state.university === 'e') {
+    return {
+      image: twuImage,
+      ready: twuImageReady,
+      label: 'TWU',
+      scale: 1.5,
+      yOffset: 0,
     };
   }
 
@@ -2586,7 +2603,7 @@ if (difficultySelectEl) {
 if (universitySelectEl) {
   universitySelectEl.value = state.university;
   universitySelectEl.addEventListener('change', () => {
-    const next = universitySelectEl.value === 'b' || universitySelectEl.value === 'c' || universitySelectEl.value === 'd'
+    const next = ['b', 'c', 'd', 'e'].includes(universitySelectEl.value)
       ? universitySelectEl.value
       : 'a';
     state.university = next;
